@@ -7,8 +7,88 @@ const ModelFactory = {
   // Shared materials for optimal performance
   materials: null,
 
+  createCanvasTexture(width, height, drawFn) {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    drawFn(ctx, width, height);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+  },
+
   initMaterials() {
     if (this.materials) return;
+
+    // Procedural grid texture for wasteland ground
+    let groundTexture = null;
+    let hazardTexture = null;
+    let wallTexture = null;
+
+    if (typeof document !== 'undefined') {
+      groundTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
+        ctx.fillStyle = '#0f141a';
+        ctx.fillRect(0, 0, w, h);
+        // Distressed asphalt speckles
+        for (let i = 0; i < 400; i++) {
+          const x = Math.random() * w;
+          const y = Math.random() * h;
+          const r = Math.random() * 2 + 1;
+          ctx.fillStyle = Math.random() > 0.5 ? '#1a222c' : '#080b0f';
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Cyber grid lines
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, w, h);
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.08)';
+        ctx.beginPath();
+        ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+        ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+        ctx.stroke();
+      });
+      if (groundTexture) groundTexture.repeat.set(80, 80);
+
+      // Hazard stripes texture
+      hazardTexture = this.createCanvasTexture(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#ffaa00';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        for (let i = -w; i < w * 2; i += 32) {
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + 16, 0);
+          ctx.lineTo(i + 16 - h, h);
+          ctx.lineTo(i - h, h);
+        }
+        ctx.fill();
+      });
+      if (hazardTexture) hazardTexture.repeat.set(4, 1);
+
+      // Bunker wall panels texture
+      wallTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
+        ctx.fillStyle = '#1c2229';
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#2b343e';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(4, 4, w - 8, h - 8);
+        ctx.fillStyle = '#3a4654';
+        // Corner bolts
+        [16, w - 16].forEach(x => {
+          [16, h - 16].forEach(y => {
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        });
+      });
+      if (wallTexture) wallTexture.repeat.set(4, 2);
+    }
 
     this.materials = {
       // Metallic chassis
@@ -29,6 +109,7 @@ const ModelFactory = {
       }),
       hazard: new THREE.MeshStandardMaterial({
         color: 0xd4a017,
+        map: hazardTexture,
         metalness: 0.3,
         roughness: 0.6
       }),
@@ -50,8 +131,9 @@ const ModelFactory = {
       // Environment
       concrete: new THREE.MeshStandardMaterial({
         color: 0x3b3d40,
-        roughness: 0.9,
-        metalness: 0.1
+        map: groundTexture,
+        roughness: 0.85,
+        metalness: 0.15
       }),
       ruinBrick: new THREE.MeshStandardMaterial({
         color: 0x483d3b,
@@ -60,11 +142,13 @@ const ModelFactory = {
       }),
       bunkerWall: new THREE.MeshStandardMaterial({
         color: 0x1f2429,
+        map: wallTexture,
         metalness: 0.5,
         roughness: 0.5
       }),
       bunkerFloor: new THREE.MeshStandardMaterial({
         color: 0x14181c,
+        map: groundTexture,
         metalness: 0.6,
         roughness: 0.4
       }),
@@ -787,6 +871,64 @@ const ModelFactory = {
 
     pad.userData = { isExtraction: true };
     return pad;
+  },
+
+  // 3D Cinematic Showcase for Title Screen & Menus
+  createTitleShowcase() {
+    this.initMaterials();
+    const showcase = new THREE.Group();
+
+    // Ground platform with glowing grid
+    const floorGeo = new THREE.CylinderGeometry(15, 16, 0.4, 32);
+    const floor = new THREE.Mesh(floorGeo, this.materials.concrete);
+    floor.position.y = -0.2;
+    showcase.add(floor);
+
+    // Glowing cyan cyber ring around platform
+    const ringGeo = new THREE.RingGeometry(13.8, 14.6, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ring = new THREE.Mesh(ringGeo, this.materials.cyanGlow);
+    ring.position.y = 0.02;
+    showcase.add(ring);
+
+    // Iconic 3D T-800 Endoskeleton in center
+    const t800 = this.createT800();
+    t800.position.set(0, 0, 0);
+    t800.scale.set(1.4, 1.4, 1.4);
+    showcase.add(t800);
+
+    // HK-Aerial hovering in sky
+    const hk = this.createHKAerial();
+    hk.position.set(5, 5.5, -8);
+    hk.scale.set(0.8, 0.8, 0.8);
+    hk.rotation.y = -0.4;
+    showcase.add(hk);
+
+    // Ruined buildings in background
+    const b1 = this.createRuinBuilding(8, 25, 8);
+    b1.position.set(-14, 0, -18);
+    showcase.add(b1);
+
+    const b2 = this.createRuinBuilding(10, 32, 10);
+    b2.position.set(15, 0, -22);
+    showcase.add(b2);
+
+    // Red and Cyan Dynamic Atmospheric Lights
+    const redLight = new THREE.PointLight(0xff2222, 2.8, 25);
+    redLight.position.set(0, 2.5, 3);
+    showcase.add(redLight);
+
+    const cyanLight = new THREE.PointLight(0x00e5ff, 2.2, 30);
+    cyanLight.position.set(-4, 4, 2);
+    showcase.add(cyanLight);
+
+    showcase.userData = {
+      t800: t800,
+      hk: hk,
+      ring: ring
+    };
+
+    return showcase;
   }
 };
 

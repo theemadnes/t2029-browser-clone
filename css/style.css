@@ -603,12 +603,12 @@ body.no-crt #crt-overlay {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 4, 8, 0.92);
+  background: radial-gradient(circle, rgba(10, 16, 24, 0.45) 0%, rgba(2, 4, 8, 0.75) 100%);
   z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(2px);
   opacity: 1;
   transition: opacity 0.25s ease;
 }
@@ -616,16 +616,16 @@ body.no-crt #crt-overlay {
 .modal-layer.hidden {
   opacity: 0;
   pointer-events: none;
-  display: none;
+  display: none !important;
 }
 
 .terminal-window {
   width: 900px;
   max-width: 95vw;
   max-height: 90vh;
-  background: #080d14;
+  background: rgba(8, 13, 20, 0.88);
   border: 2px solid var(--term-cyan);
-  box-shadow: 0 0 30px rgba(0, 229, 255, 0.25), inset 0 0 40px rgba(0, 20, 35, 0.8);
+  box-shadow: 0 0 35px rgba(0, 229, 255, 0.3), inset 0 0 40px rgba(0, 20, 35, 0.8);
   display: flex;
   flex-direction: column;
   overflow: hidden;

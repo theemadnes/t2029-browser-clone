@@ -91,10 +91,11 @@ class GameEngine {
   // =========================================================================
 
   init() {
+    ModelFactory.initMaterials();
     this.initThree();
     this.hud = new HUDSystem();
 
-    // Start title screen music and display
+    // Start title screen music and 3D showcase
     this.showTitleScreen();
 
     // Animation Loop
@@ -103,6 +104,7 @@ class GameEngine {
   }
 
   initThree() {
+    ModelFactory.initMaterials();
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.FogExp2(0x080f18, 0.012);
 
@@ -249,12 +251,14 @@ class GameEngine {
 
   initUI() {
     // Title Screen buttons
+    const btnQuickstart = document.getElementById('btn-title-quickstart');
     const btnCampaign = document.getElementById('btn-title-campaign');
     const btnTraining = document.getElementById('btn-title-training');
     const btnArmory = document.getElementById('btn-title-armory');
     const btnSettings = document.getElementById('btn-title-settings');
     const btnIntel = document.getElementById('btn-title-intel');
 
+    if (btnQuickstart) btnQuickstart.onclick = () => this.startMission(1);
     if (btnCampaign) btnCampaign.onclick = () => this.showMissionSelect();
     if (btnTraining) btnTraining.onclick = () => this.startMission('training');
     if (btnArmory) btnArmory.onclick = () => this.showArmory();
@@ -342,8 +346,33 @@ class GameEngine {
     if (modal) modal.classList.remove('hidden');
   }
 
+  setupTitleShowcase() {
+    ModelFactory.initMaterials();
+    // Clear old entities
+    while (this.scene.children.length > 0) {
+      this.scene.remove(this.scene.children[0]);
+    }
+    this.titleShowcase = ModelFactory.createTitleShowcase();
+    this.scene.add(this.titleShowcase);
+
+    // Setup camera focused on 3D Terminator
+    this.yawObject.position.set(0, 1.8, 4.8);
+    this.yawObject.rotation.set(0, 0, 0);
+    this.pitchObject.rotation.set(-0.06, 0, 0);
+    this.scene.add(this.yawObject);
+
+    // Dynamic lighting
+    const hemiLight = new THREE.HemisphereLight(0x446688, 0x111622, 0.7);
+    this.scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xaaccff, 0.9);
+    dirLight.position.set(20, 40, 30);
+    this.scene.add(dirLight);
+  }
+
   showTitleScreen() {
     this.state = 'TITLE';
+    this.setupTitleShowcase();
     this.showModal('title-screen');
     this.audio.playTrack('title');
     if (document.exitPointerLock) document.exitPointerLock();
@@ -633,7 +662,8 @@ class GameEngine {
     this.player.position.set(start.x * 2, 0, start.y * 2);
     this.yawObject.position.copy(this.player.position);
     this.yawObject.position.y = this.player.height;
-    this.yawObject.rotation.set(0, 0, 0);
+    // Face positive Z towards the battlefield objectives
+    this.yawObject.rotation.set(0, Math.PI, 0);
     this.pitchObject.rotation.set(0, 0, 0);
     this.player.velocity.set(0, 0, 0);
 
@@ -660,6 +690,9 @@ class GameEngine {
   }
 
   buildMissionWorld(mission) {
+    this.titleShowcase = null;
+    ModelFactory.initMaterials();
+
     // Clear old entities
     while (this.scene.children.length > 0) {
       this.scene.remove(this.scene.children[0]);
@@ -672,11 +705,20 @@ class GameEngine {
     this.interactiveObjects = [];
     this.missionTriggers = [];
 
+    // Apocalyptic Sky Dome
+    const skyGeo = new THREE.SphereGeometry(300, 24, 16);
+    const skyMat = new THREE.MeshBasicMaterial({
+      color: 0x090f19,
+      side: THREE.BackSide
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    this.scene.add(sky);
+
     // Re-add lights and player camera rig
-    const hemiLight = new THREE.HemisphereLight(0x446688, 0x111622, 0.6);
+    const hemiLight = new THREE.HemisphereLight(0x446688, 0x111622, 0.7);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0x7799bb, 0.8);
+    const dirLight = new THREE.DirectionalLight(0xaaccff, 0.85);
     dirLight.position.set(50, 80, 40);
     this.scene.add(dirLight);
 
@@ -1727,6 +1769,12 @@ class GameEngine {
       this.updateParticles(dt);
       this.updateMission(dt);
       this.updateHUD(dt);
+    } else if (this.titleShowcase) {
+      // Smoothly rotate 3D showcase on title screen & menus
+      this.titleShowcase.rotation.y += dt * 0.35;
+      if (this.titleShowcase.userData && this.titleShowcase.userData.hk) {
+        this.titleShowcase.userData.hk.position.y = 5.5 + Math.sin(this.clock.getElapsedTime() * 1.5) * 0.4;
+      }
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -2007,6 +2055,8 @@ class GameEngine {
     );
   }
 }
+
+window.GameEngine = GameEngine;
 
 // Global bootstrap on window load
 window.addEventListener('DOMContentLoaded', () => {
