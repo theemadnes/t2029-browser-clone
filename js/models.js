@@ -1,10 +1,25 @@
 /* ==========================================================================
    THE TERMINATOR: 2029 - 3D BROWSER CLONE
-   Procedural 3D Mesh Generator & Visual Assets (Three.js)
+   Procedural 3D Voxel Engine & 8-Bit Visual Assets (Three.js)
+   Authentic 1992 Bethesda DOS / VGA Voxel Reconstruction
    ========================================================================== */
 
+const VoxelBuilder = {
+  createBox(w, h, d, mat, x = 0, y = 0, z = 0) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    return mesh;
+  },
+
+  addBox(parent, w, h, d, mat, x = 0, y = 0, z = 0) {
+    const box = this.createBox(w, h, d, mat, x, y, z);
+    parent.add(box);
+    return box;
+  }
+};
+
 const ModelFactory = {
-  // Shared materials for optimal performance
   materials: null,
 
   createCanvasTexture(width, height, drawFn) {
@@ -17,1038 +32,879 @@ const ModelFactory = {
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
     return texture;
   },
 
   initMaterials() {
     if (this.materials) return;
 
-    // Procedural textures for 1992 Bethesda Terminator 2029 aesthetics
     let groundTexture = null;
     let hazardTexture = null;
     let wallTexture = null;
     let buildingTexture = null;
 
     if (typeof document !== 'undefined') {
-      // 1. Post-apocalyptic Ruined Street & Asphalt Texture
-      groundTexture = this.createCanvasTexture(512, 512, (ctx, w, h) => {
-        // Base dark asphalt
-        ctx.fillStyle = '#222830';
+      // 1. Post-apocalyptic 8-Bit Ruined Street & Asphalt Texture
+      groundTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
+        ctx.fillStyle = '#1e252d';
         ctx.fillRect(0, 0, w, h);
 
-        // Concrete pavement slabs & cracks
-        ctx.strokeStyle = '#181e26';
-        ctx.lineWidth = 3;
-        for (let x = 0; x < w; x += 128) {
-          ctx.beginPath();
-          ctx.moveTo(x, 0); ctx.lineTo(x, h);
-          ctx.stroke();
+        ctx.strokeStyle = '#141920';
+        ctx.lineWidth = 4;
+        for (let x = 0; x < w; x += 64) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
         }
-        for (let y = 0; y < h; y += 128) {
-          ctx.beginPath();
-          ctx.moveTo(0, y); ctx.lineTo(w, y);
-          ctx.stroke();
+        for (let y = 0; y < h; y += 64) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
         }
 
-        // Road striping (distressed yellow and white lane marks)
-        ctx.fillStyle = '#c89e28';
-        for (let y = 20; y < h; y += 64) {
-          ctx.fillRect(60, y, 10, 36);
-          ctx.fillRect(w - 70, y, 10, 36);
+        ctx.fillStyle = '#c8961e';
+        for (let y = 16; y < h; y += 48) {
+          ctx.fillRect(32, y, 8, 24);
+          ctx.fillRect(w - 40, y, 8, 24);
         }
 
-        // Cracks and rubble debris
-        ctx.strokeStyle = '#11161d';
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 20; i++) {
-          const cx = Math.random() * w;
-          const cy = Math.random() * h;
-          ctx.beginPath();
-          ctx.moveTo(cx, cy);
-          ctx.lineTo(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 40);
-          ctx.lineTo(cx + (Math.random() - 0.5) * 60, cy + (Math.random() - 0.5) * 60);
-          ctx.stroke();
-        }
-
-        // Asphalt gravel speckles
-        for (let i = 0; i < 600; i++) {
-          const x = Math.random() * w;
-          const y = Math.random() * h;
-          ctx.fillStyle = Math.random() > 0.5 ? '#333b47' : '#141820';
-          ctx.fillRect(x, y, 2, 2);
+        for (let i = 0; i < 400; i++) {
+          const x = (Math.random() * w) | 0;
+          const y = (Math.random() * h) | 0;
+          ctx.fillStyle = Math.random() > 0.5 ? '#2a333d' : '#10141a';
+          ctx.fillRect(x, y, 3, 3);
         }
       });
       if (groundTexture) groundTexture.repeat.set(40, 40);
 
-      // 2. Ruined Building Facade with shattered window rows
-      buildingTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
-        ctx.fillStyle = '#2d333b';
+      // 2. Ruined Building Voxel Brick Facade
+      buildingTexture = this.createCanvasTexture(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#262c33';
         ctx.fillRect(0, 0, w, h);
 
-        // Concrete panels
-        ctx.strokeStyle = '#1a1f26';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(2, 2, w - 4, h - 4);
+        ctx.strokeStyle = '#15191f';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, w - 2, h - 2);
 
-        // Window grid
-        for (let y = 16; y < h - 16; y += 32) {
-          for (let x = 16; x < w - 16; x += 28) {
-            const rand = Math.random();
-            if (rand > 0.65) {
-              // Intact dark window
-              ctx.fillStyle = '#101620';
-              ctx.fillRect(x, y, 18, 20);
-            } else if (rand > 0.45) {
-              // Shattered / glowing office window
-              ctx.fillStyle = rand > 0.55 ? '#ff9900' : '#00e5ff';
-              ctx.fillRect(x, y, 18, 20);
-            } else {
-              // Blown-out hole with rebar
-              ctx.fillStyle = '#0a0d12';
-              ctx.fillRect(x, y, 18, 20);
-              ctx.strokeStyle = '#555';
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(x, y + 10); ctx.lineTo(x + 18, y + 10);
-              ctx.stroke();
+        for (let y = 8; y < h - 8; y += 24) {
+          for (let x = 8; x < w - 8; x += 20) {
+            ctx.fillStyle = Math.random() > 0.65 ? '#0a0e14' : '#141a22';
+            ctx.fillRect(x, y, 12, 14);
+            if (Math.random() > 0.88) {
+              ctx.fillStyle = '#00e5ff';
+              ctx.fillRect(x + 4, y + 4, 4, 4);
             }
           }
         }
       });
       if (buildingTexture) buildingTexture.repeat.set(2, 6);
 
-      // 3. Hazard stripes texture
-      hazardTexture = this.createCanvasTexture(128, 128, (ctx, w, h) => {
-        ctx.fillStyle = '#ffaa00';
+      // 3. Hazard Chevron Texture
+      hazardTexture = this.createCanvasTexture(64, 64, (ctx, w, h) => {
+        ctx.fillStyle = '#d4a017';
         ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = '#181818';
-        ctx.beginPath();
-        for (let i = -w; i < w * 2; i += 32) {
+        ctx.fillStyle = '#15181c';
+        for (let i = -w; i < w * 2; i += 16) {
+          ctx.beginPath();
           ctx.moveTo(i, 0);
-          ctx.lineTo(i + 16, 0);
-          ctx.lineTo(i + 16 - h, h);
-          ctx.lineTo(i - h, h);
+          ctx.lineTo(i + 10, 0);
+          ctx.lineTo(i + 10 + h, h);
+          ctx.lineTo(i + h, h);
+          ctx.closePath();
+          ctx.fill();
         }
-        ctx.fill();
       });
-      if (hazardTexture) hazardTexture.repeat.set(4, 1);
+      if (hazardTexture) hazardTexture.repeat.set(2, 2);
 
-      // 4. Bunker wall panels texture with rivets
-      wallTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
-        ctx.fillStyle = '#262d36';
+      // 4. Bunker Metal Plate Wall Texture
+      wallTexture = this.createCanvasTexture(128, 128, (ctx, w, h) => {
+        ctx.fillStyle = '#252c34';
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = '#394452';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(4, 4, w - 8, h - 8);
-        ctx.fillStyle = '#505d6e';
-        [16, w - 16].forEach(x => {
-          [16, h - 16].forEach(y => {
-            ctx.beginPath();
-            ctx.arc(x, y, 4, 0, Math.PI * 2);
-            ctx.fill();
-          });
+        ctx.strokeStyle = '#11161c';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(2, 2, w - 4, h - 4);
+        ctx.fillStyle = '#3d4754';
+        [ [8, 8], [w - 12, 8], [8, h - 12], [w - 12, h - 12] ].forEach(([bx, by]) => {
+          ctx.fillRect(bx, by, 4, 4);
         });
       });
       if (wallTexture) wallTexture.repeat.set(4, 2);
 
-      // 5. Authentic 1992 Bitmap Skyline Backdrop of Ruined Los Angeles
-      this.skylineTexture = this.createCanvasTexture(2048, 512, (ctx, w, h) => {
-        // Sky gradient: twilight dark-slate to burning horizon
+      // 5. Authentic 1992 Bethesda Bitmap Skyline Panorama
+      this.skylineTexture = this.createCanvasTexture(1024, 256, (ctx, w, h) => {
         const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
-        skyGrad.addColorStop(0.0, '#0c1626');
-        skyGrad.addColorStop(0.45, '#18273d');
-        skyGrad.addColorStop(0.75, '#481d19');
-        skyGrad.addColorStop(1.0, '#66241a');
+        skyGrad.addColorStop(0.0, '#0a121e');
+        skyGrad.addColorStop(0.5, '#152233');
+        skyGrad.addColorStop(0.8, '#421a16');
+        skyGrad.addColorStop(1.0, '#592018');
         ctx.fillStyle = skyGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Stars in upper night sky
         ctx.fillStyle = '#ffffff';
-        for (let i = 0; i < 350; i++) {
-          const sx = Math.random() * w;
-          const sy = Math.random() * (h * 0.55);
-          const sr = Math.random() * 1.5 + 0.5;
-          ctx.beginPath();
-          ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-          ctx.fill();
+        for (let i = 0; i < 180; i++) {
+          const sx = (Math.random() * w) | 0;
+          const sy = (Math.random() * (h * 0.5)) | 0;
+          ctx.fillRect(sx, sy, 2, 2);
         }
 
-        // Skynet Searchlight Beams cutting across the sky
-        const beams = [220, 680, 1150, 1620, 1950];
+        const beams = [120, 360, 600, 840];
         beams.forEach(bx => {
-          ctx.save();
-          const beamGrad = ctx.createLinearGradient(bx, h, bx + 120, 0);
-          beamGrad.addColorStop(0, 'rgba(0, 229, 255, 0.45)');
-          beamGrad.addColorStop(0.65, 'rgba(0, 229, 255, 0.15)');
-          beamGrad.addColorStop(1, 'rgba(0, 229, 255, 0)');
-          ctx.fillStyle = beamGrad;
+          ctx.fillStyle = 'rgba(0, 229, 255, 0.25)';
           ctx.beginPath();
-          ctx.moveTo(bx - 12, h);
-          ctx.lineTo(bx + 12, h);
-          ctx.lineTo(bx + 160, 0);
-          ctx.lineTo(bx + 70, 0);
+          ctx.moveTo(bx - 8, h);
+          ctx.lineTo(bx + 8, h);
+          ctx.lineTo(bx + 90, 0);
+          ctx.lineTo(bx + 50, 0);
           ctx.closePath();
           ctx.fill();
-          ctx.restore();
         });
 
-        // Distant burning fires and smoke columns
-        for (let i = 0; i < 9; i++) {
-          const smx = (i * 230) + 70;
-          const smGrad = ctx.createRadialGradient(smx, h - 80, 20, smx, h - 160, 100);
-          smGrad.addColorStop(0, 'rgba(255, 75, 0, 0.5)');
-          smGrad.addColorStop(0.5, 'rgba(70, 25, 20, 0.45)');
-          smGrad.addColorStop(1, 'rgba(20, 10, 15, 0)');
-          ctx.fillStyle = smGrad;
-          ctx.beginPath();
-          ctx.arc(smx, h - 100, 90, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // Layer 1: Distant City Skyline Silhouettes
-        ctx.fillStyle = '#121822';
+        ctx.fillStyle = '#0f141d';
         let curX = 0;
         while (curX < w) {
-          const bWidth = 25 + Math.random() * 45;
-          const bHeight = 80 + Math.random() * 180;
+          const bWidth = 18 + ((Math.random() * 30) | 0);
+          const bHeight = 40 + ((Math.random() * 110) | 0);
           ctx.fillRect(curX, h - bHeight, bWidth, bHeight);
-
-          if (Math.random() > 0.35) {
-            ctx.fillRect(curX + bWidth / 2 - 1, h - bHeight - 25, 2, 25);
-          }
-          curX += bWidth + (Math.random() * 8 - 4);
+          curX += bWidth + 2;
         }
 
-        // Layer 2: Midground Ruined Skyscraper Towers with lit window matrices
-        curX = 10;
+        curX = 8;
         while (curX < w) {
-          const bWidth = 35 + Math.random() * 65;
-          const bHeight = 130 + Math.random() * 220;
-          ctx.fillStyle = '#1c2533';
+          const bWidth = 24 + ((Math.random() * 40) | 0);
+          const bHeight = 70 + ((Math.random() * 120) | 0);
+          ctx.fillStyle = '#171f2a';
           ctx.fillRect(curX, h - bHeight, bWidth, bHeight);
 
-          // Shattered jagged rooftop
-          ctx.beginPath();
-          ctx.moveTo(curX, h - bHeight);
-          ctx.lineTo(curX + bWidth * 0.45, h - bHeight + (Math.random() * 32 - 16));
-          ctx.lineTo(curX + bWidth, h - bHeight);
-          ctx.lineTo(curX + bWidth, h);
-          ctx.lineTo(curX, h);
-          ctx.fill();
-
-          // Hundreds of illuminated window squares (1992 Bethesda signature look)
-          for (let wy = h - bHeight + 16; wy < h - 20; wy += 14) {
-            for (let wx = curX + 6; wx < curX + bWidth - 6; wx += 10) {
-              const rand = Math.random();
-              if (rand > 0.72) {
-                ctx.fillStyle = rand > 0.9 ? '#00e5ff' : (rand > 0.82 ? '#ffaa00' : '#ff3333');
-                ctx.fillRect(wx, wy, 5, 7);
-                ctx.fillStyle = '#1c2533';
+          for (let wy = h - bHeight + 10; wy < h - 10; wy += 8) {
+            for (let wx = curX + 4; wx < curX + bWidth - 4; wx += 6) {
+              if (Math.random() > 0.75) {
+                ctx.fillStyle = Math.random() > 0.85 ? '#00e5ff' : '#ffaa00';
+                ctx.fillRect(wx, wy, 3, 4);
+                ctx.fillStyle = '#171f2a';
               }
             }
           }
-          curX += bWidth + 10;
+          curX += bWidth + 6;
         }
-
-        // Layer 3: Foreground rubble ridge & burning ground glow
-        const glowGrad = ctx.createLinearGradient(0, h - 70, 0, h);
-        glowGrad.addColorStop(0, 'rgba(255, 70, 0, 0.4)');
-        glowGrad.addColorStop(1, 'rgba(25, 30, 38, 0.98)');
-        ctx.fillStyle = glowGrad;
-        ctx.fillRect(0, h - 70, w, 70);
-
-        ctx.fillStyle = '#10141c';
-        ctx.beginPath();
-        ctx.moveTo(0, h);
-        for (let x = 0; x <= w; x += 25) {
-          const rh = 18 + Math.sin(x * 0.04) * 14 + Math.random() * 8;
-          ctx.lineTo(x, h - rh);
-        }
-        ctx.lineTo(w, h);
-        ctx.closePath();
-        ctx.fill();
       });
     }
 
+    // 8-Bit VGA Flat-Shaded Voxel Materials
     this.materials = {
-      // Metallic chassis
       chrome: new THREE.MeshStandardMaterial({
-        color: 0xb5c4d2,
-        metalness: 0.92,
-        roughness: 0.2
+        color: 0xc2d0de,
+        metalness: 0.88,
+        roughness: 0.32,
+        flatShading: true
       }),
       darkMetal: new THREE.MeshStandardMaterial({
-        color: 0x303742,
-        metalness: 0.8,
-        roughness: 0.35
+        color: 0x2a323c,
+        metalness: 0.75,
+        roughness: 0.48,
+        flatShading: true
       }),
       gunmetal: new THREE.MeshStandardMaterial({
-        color: 0x4a535e,
-        metalness: 0.75,
-        roughness: 0.3
+        color: 0x424c58,
+        metalness: 0.70,
+        roughness: 0.42,
+        flatShading: true
       }),
       hazard: new THREE.MeshStandardMaterial({
         color: 0xd4a017,
         map: hazardTexture,
-        metalness: 0.3,
-        roughness: 0.6
+        metalness: 0.25,
+        roughness: 0.60,
+        flatShading: true
       }),
 
-      // Glowing elements
-      redEye: new THREE.MeshBasicMaterial({
-        color: 0xff1111
-      }),
-      cyanGlow: new THREE.MeshBasicMaterial({
-        color: 0x00e5ff
-      }),
-      amberGlow: new THREE.MeshBasicMaterial({
-        color: 0xffaa00
-      }),
-      greenGlow: new THREE.MeshBasicMaterial({
-        color: 0x00ff66
-      }),
+      redEye: new THREE.MeshBasicMaterial({ color: 0xff1e27 }),
+      cyanGlow: new THREE.MeshBasicMaterial({ color: 0x00ffff }),
+      amberGlow: new THREE.MeshBasicMaterial({ color: 0xffaa00 }),
+      greenGlow: new THREE.MeshBasicMaterial({ color: 0x00ff66 }),
+      orangeGlow: new THREE.MeshBasicMaterial({ color: 0xff5500 }),
 
-      // Environment
       concrete: new THREE.MeshStandardMaterial({
-        color: 0x555d68,
+        color: 0x4e5660,
         map: groundTexture,
-        roughness: 0.8,
-        metalness: 0.2
+        roughness: 0.85,
+        metalness: 0.15,
+        flatShading: true
       }),
       ruinBrick: new THREE.MeshStandardMaterial({
-        color: 0x4a5059,
+        color: 0x3e454e,
         map: buildingTexture,
-        roughness: 0.85,
-        metalness: 0.1
+        roughness: 0.90,
+        metalness: 0.10,
+        flatShading: true
       }),
       bunkerWall: new THREE.MeshStandardMaterial({
-        color: 0x323a45,
+        color: 0x2d343e,
         map: wallTexture,
-        metalness: 0.5,
-        roughness: 0.5
+        metalness: 0.45,
+        roughness: 0.55,
+        flatShading: true
       }),
       bunkerFloor: new THREE.MeshStandardMaterial({
-        color: 0x252d36,
+        color: 0x202730,
         map: groundTexture,
-        metalness: 0.6,
-        roughness: 0.4
+        metalness: 0.50,
+        roughness: 0.50,
+        flatShading: true
       }),
       rustMetal: new THREE.MeshStandardMaterial({
-        color: 0x594235,
-        metalness: 0.6,
-        roughness: 0.8
-      })
+        color: 0x663c2b,
+        metalness: 0.50,
+        roughness: 0.85,
+        flatShading: true
+      }),
+
+      debrisMetal: new THREE.MeshStandardMaterial({
+        color: 0x909fae,
+        metalness: 0.85,
+        roughness: 0.30,
+        flatShading: true
+      }),
+      debrisFire: new THREE.MeshBasicMaterial({ color: 0xff4400 }),
+      debrisSmoke: new THREE.MeshBasicMaterial({ color: 0x1e242a })
     };
   },
 
   // =========================================================================
-  // FIRST-PERSON WEAPON VIEWMODELS
+  // 1. FIRST-PERSON WEAPON VIEWMODEL (3D Voxel Plasma Pulse Cannon)
   // =========================================================================
 
   createWeaponViewModel(weaponId = 'ppc_40w') {
     this.initMaterials();
     const group = new THREE.Group();
 
-    // Main weapon receiver
-    const receiverGeo = new THREE.BoxGeometry(0.14, 0.16, 0.7);
-    const receiver = new THREE.Mesh(receiverGeo, this.materials.gunmetal);
-    receiver.position.set(0, 0, -0.2);
-    group.add(receiver);
-
-    // Stock & Grip
-    const gripGeo = new THREE.BoxGeometry(0.08, 0.22, 0.1);
-    const grip = new THREE.Mesh(gripGeo, this.materials.darkMetal);
-    grip.position.set(0, -0.15, 0.05);
-    grip.rotation.x = 0.25;
-    group.add(grip);
-
-    // Barrel assembly
-    let barrelColor = 0x00e5ff;
-    let coilColor = 0x00aacc;
-    let barrelRadius = 0.04;
-    let barrelLen = 0.65;
-
+    let barrelColor = 0x00ffff;
+    let coilColor = 0x0099cc;
     if (weaponId === 'ppc_60w') {
       barrelColor = 0x33b5e5;
-      coilColor = 0x0088cc;
-      barrelRadius = 0.048;
+      coilColor = 0x0077b3;
     } else if (weaponId === 'ppc_80w') {
-      barrelColor = 0x9955ff;
-      coilColor = 0x6600cc;
-      barrelRadius = 0.055;
-      barrelLen = 0.75;
+      barrelColor = 0xffaa00;
+      coilColor = 0xcc7700;
     } else if (weaponId === 'ppc_100w') {
-      barrelColor = 0xffffff;
-      coilColor = 0xffaa00;
-      barrelRadius = 0.065;
-      barrelLen = 0.85;
+      barrelColor = 0xff1155;
+      coilColor = 0xaa0033;
     }
 
-    const barrelGeo = new THREE.CylinderGeometry(barrelRadius * 0.9, barrelRadius, barrelLen, 12);
-    barrelGeo.rotateX(Math.PI / 2);
-    const barrel = new THREE.Mesh(barrelGeo, this.materials.chrome);
-    barrel.position.set(0, 0.02, -0.6);
-    group.add(barrel);
-
-    // Glowing energy coil rings
     const coilMat = new THREE.MeshBasicMaterial({ color: coilColor });
-    for (let i = 0; i < 4; i++) {
-      const coilGeo = new THREE.TorusGeometry(barrelRadius + 0.02, 0.012, 8, 16);
-      const coil = new THREE.Mesh(coilGeo, coilMat);
-      coil.position.set(0, 0.02, -0.42 - i * 0.1);
-      group.add(coil);
+    const muzzleMat = new THREE.MeshBasicMaterial({ color: barrelColor });
+
+    // Voxel Receiver
+    VoxelBuilder.addBox(group, 0.16, 0.18, 0.65, this.materials.gunmetal, 0, 0, -0.22);
+    VoxelBuilder.addBox(group, 0.12, 0.08, 0.40, this.materials.darkMetal, 0, 0.12, -0.15);
+
+    // Voxel Cooling Fins on Top
+    for (let i = 0; i < 5; i++) {
+      VoxelBuilder.addBox(group, 0.14, 0.03, 0.03, this.materials.chrome, 0, 0.17, -0.05 - i * 0.06);
     }
 
-    // Muzzle emitter cap
-    const muzzleMat = new THREE.MeshBasicMaterial({ color: barrelColor });
-    const muzzleGeo = new THREE.CylinderGeometry(barrelRadius * 1.1, barrelRadius * 0.8, 0.08, 12);
-    muzzleGeo.rotateX(Math.PI / 2);
-    const muzzle = new THREE.Mesh(muzzleGeo, muzzleMat);
-    muzzle.position.set(0, 0.02, -0.6 - barrelLen / 2);
-    group.add(muzzle);
+    // Voxel Plasma Power Chamber
+    VoxelBuilder.addBox(group, 0.10, 0.10, 0.32, coilMat, 0, 0.02, -0.58);
+    for (let i = 0; i < 4; i++) {
+      VoxelBuilder.addBox(group, 0.14, 0.14, 0.04, this.materials.darkMetal, 0, 0.02, -0.46 - i * 0.08);
+    }
 
-    // Top Tactical Scope
-    const scopeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.3, 10);
-    scopeGeo.rotateX(Math.PI / 2);
-    const scope = new THREE.Mesh(scopeGeo, this.materials.darkMetal);
-    scope.position.set(0, 0.12, -0.2);
-    group.add(scope);
+    // Voxel Twin Barrel
+    VoxelBuilder.addBox(group, 0.06, 0.06, 0.50, this.materials.chrome, -0.035, 0.02, -0.85);
+    VoxelBuilder.addBox(group, 0.06, 0.06, 0.50, this.materials.chrome, 0.035, 0.02, -0.85);
 
-    // Front/Right alignment for FPS view
-    group.position.set(0.28, -0.26, -0.5);
-    group.scale.set(1.2, 1.2, 1.2);
+    // Voxel Heavy Muzzle Brake
+    VoxelBuilder.addBox(group, 0.16, 0.10, 0.10, this.materials.darkMetal, 0, 0.02, -1.12);
+    const emitterL = VoxelBuilder.addBox(group, 0.04, 0.04, 0.02, muzzleMat, -0.035, 0.02, -1.18);
+    const emitterR = VoxelBuilder.addBox(group, 0.04, 0.04, 0.02, muzzleMat, 0.035, 0.02, -1.18);
+
+    // Voxel Grip & Power Battery
+    VoxelBuilder.addBox(group, 0.08, 0.22, 0.12, this.materials.darkMetal, 0, -0.16, 0.05);
+    VoxelBuilder.addBox(group, 0.10, 0.20, 0.20, this.materials.gunmetal, 0, -0.12, -0.18);
+    VoxelBuilder.addBox(group, 0.02, 0.14, 0.04, this.materials.greenGlow, 0.055, -0.12, -0.18);
+
+    // Voxel Scope
+    VoxelBuilder.addBox(group, 0.06, 0.08, 0.22, this.materials.darkMetal, 0, 0.18, -0.22);
+    VoxelBuilder.addBox(group, 0.05, 0.05, 0.02, this.materials.redEye, 0, 0.18, -0.11);
+
+    group.position.set(0.32, -0.26, -0.55);
+    group.scale.set(1.15, 1.15, 1.15);
+
+    group.userData = {
+      basePos: group.position.clone(),
+      emitter: emitterL
+    };
 
     return group;
   },
 
   // =========================================================================
-  // SKYNET ENEMY UNITS
+  // 2. 3D VOXEL T-800 ENDOSKELETON
   // =========================================================================
 
-  // 1. T-800 Endoskeleton
   createT800() {
     this.initMaterials();
     const t800 = new THREE.Group();
 
-    // Chrome Skull
-    const skullGeo = new THREE.BoxGeometry(0.35, 0.42, 0.38);
-    const skull = new THREE.Mesh(skullGeo, this.materials.chrome);
-    skull.position.set(0, 1.75, 0);
-    t800.add(skull);
+    // --- HEAD ---
+    const head = new THREE.Group();
+    head.position.set(0, 1.62, 0);
 
-    // Brow & Jaw
-    const jawGeo = new THREE.BoxGeometry(0.24, 0.16, 0.28);
-    const jaw = new THREE.Mesh(jawGeo, this.materials.chrome);
-    jaw.position.set(0, 1.52, 0.06);
-    t800.add(jaw);
+    // Cranium
+    VoxelBuilder.addBox(head, 0.32, 0.14, 0.32, this.materials.chrome, 0, 0.16, 0);
+    VoxelBuilder.addBox(head, 0.38, 0.16, 0.36, this.materials.chrome, 0, 0.04, 0.02);
+    VoxelBuilder.addBox(head, 0.40, 0.08, 0.22, this.materials.chrome, 0, -0.04, 0.12);
 
-    // Glowing Red Eyes
-    const eyeGeo = new THREE.SphereGeometry(0.04, 8, 8);
-    const leftEye = new THREE.Mesh(eyeGeo, this.materials.redEye);
-    leftEye.position.set(-0.09, 1.76, 0.18);
-    const rightEye = new THREE.Mesh(eyeGeo, this.materials.redEye);
-    rightEye.position.set(0.09, 1.76, 0.18);
-    t800.add(leftEye);
-    t800.add(rightEye);
+    // Eye Sockets & Glowing Red Voxel Eyes
+    VoxelBuilder.addBox(head, 0.34, 0.10, 0.12, this.materials.darkMetal, 0, -0.08, 0.15);
+    VoxelBuilder.addBox(head, 0.06, 0.06, 0.04, this.materials.redEye, -0.09, -0.08, 0.21);
+    VoxelBuilder.addBox(head, 0.06, 0.06, 0.04, this.materials.redEye, 0.09, -0.08, 0.21);
 
-    // Neck & Spine
-    const spineGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.6, 8);
-    const spine = new THREE.Mesh(spineGeo, this.materials.chrome);
-    spine.position.set(0, 1.35, -0.05);
-    t800.add(spine);
+    // Cheekbones & Dental Jaw
+    VoxelBuilder.addBox(head, 0.28, 0.10, 0.18, this.materials.chrome, 0, -0.16, 0.12);
+    VoxelBuilder.addBox(head, 0.18, 0.04, 0.12, this.materials.chrome, 0, -0.22, 0.16); // upper teeth
+    VoxelBuilder.addBox(head, 0.16, 0.04, 0.10, this.materials.chrome, 0, -0.26, 0.15); // lower teeth
+    VoxelBuilder.addBox(head, 0.24, 0.10, 0.24, this.materials.darkMetal, 0, -0.29, 0.08); // jaw bone
+    VoxelBuilder.addBox(head, 0.14, 0.16, 0.14, this.materials.darkMetal, 0, -0.38, 0); // neck
+    t800.add(head);
 
-    // Ribcage & Chest Plate
-    const chestGeo = new THREE.BoxGeometry(0.65, 0.45, 0.32);
-    const chest = new THREE.Mesh(chestGeo, this.materials.chrome);
-    chest.position.set(0, 1.38, 0.02);
-    t800.add(chest);
+    // --- TORSO ---
+    const torso = new THREE.Group();
+    torso.position.set(0, 1.05, 0);
+
+    // Clavicle & Chest Ribs
+    VoxelBuilder.addBox(torso, 0.88, 0.10, 0.22, this.materials.chrome, 0, 0.32, 0);
+    VoxelBuilder.addBox(torso, 0.54, 0.18, 0.28, this.materials.chrome, 0, 0.20, 0.04);
+    VoxelBuilder.addBox(torso, 0.50, 0.10, 0.26, this.materials.chrome, 0, 0.08, 0.03);
+    VoxelBuilder.addBox(torso, 0.44, 0.09, 0.24, this.materials.chrome, 0, -0.02, 0.02);
+    VoxelBuilder.addBox(torso, 0.38, 0.08, 0.22, this.materials.chrome, 0, -0.11, 0.01);
+
+    // Spine Column & Abdominal Hydraulic Pistons
+    VoxelBuilder.addBox(torso, 0.14, 0.52, 0.14, this.materials.darkMetal, 0, 0.06, -0.08);
+    VoxelBuilder.addBox(torso, 0.08, 0.28, 0.08, this.materials.chrome, -0.14, -0.16, 0.02);
+    VoxelBuilder.addBox(torso, 0.08, 0.28, 0.08, this.materials.chrome, 0.14, -0.16, 0.02);
 
     // Pelvis
-    const pelvisGeo = new THREE.BoxGeometry(0.48, 0.2, 0.28);
-    const pelvis = new THREE.Mesh(pelvisGeo, this.materials.chrome);
-    pelvis.position.set(0, 0.95, 0);
-    t800.add(pelvis);
+    VoxelBuilder.addBox(torso, 0.46, 0.18, 0.26, this.materials.darkMetal, 0, -0.32, 0);
+    t800.add(torso);
 
-    // Arms
-    [-0.42, 0.42].forEach(x => {
-      const shoulderGeo = new THREE.SphereGeometry(0.08, 8, 8);
-      const shoulder = new THREE.Mesh(shoulderGeo, this.materials.chrome);
-      shoulder.position.set(x, 1.48, 0);
-      t800.add(shoulder);
+    // --- LEFT ARM ---
+    const leftArm = new THREE.Group();
+    leftArm.position.set(-0.46, 1.34, 0);
+    VoxelBuilder.addBox(leftArm, 0.16, 0.16, 0.16, this.materials.chrome, 0, 0, 0);
+    VoxelBuilder.addBox(leftArm, 0.12, 0.34, 0.12, this.materials.darkMetal, 0, -0.22, 0);
+    VoxelBuilder.addBox(leftArm, 0.14, 0.12, 0.14, this.materials.chrome, 0, -0.42, 0);
+    VoxelBuilder.addBox(leftArm, 0.12, 0.32, 0.12, this.materials.chrome, 0, -0.62, 0.06);
+    VoxelBuilder.addBox(leftArm, 0.10, 0.10, 0.12, this.materials.darkMetal, 0.12, -0.76, 0.22);
+    t800.add(leftArm);
 
-      const armGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.45, 8);
-      const arm = new THREE.Mesh(armGeo, this.materials.chrome);
-      arm.position.set(x, 1.25, 0.1);
-      arm.rotation.x = -0.4;
-      t800.add(arm);
-    });
+    // --- RIGHT ARM ---
+    const rightArm = new THREE.Group();
+    rightArm.position.set(0.46, 1.34, 0);
+    VoxelBuilder.addBox(rightArm, 0.16, 0.16, 0.16, this.materials.chrome, 0, 0, 0);
+    VoxelBuilder.addBox(rightArm, 0.12, 0.34, 0.12, this.materials.darkMetal, 0, -0.22, 0);
+    VoxelBuilder.addBox(rightArm, 0.14, 0.12, 0.14, this.materials.chrome, 0, -0.42, 0);
+    VoxelBuilder.addBox(rightArm, 0.12, 0.32, 0.12, this.materials.chrome, 0, -0.62, 0.06);
+    VoxelBuilder.addBox(rightArm, 0.10, 0.10, 0.12, this.materials.darkMetal, -0.10, -0.74, 0.08);
+    t800.add(rightArm);
 
-    // Weapon held by T-800: Phased Plasma Rifle
-    const rifleGeo = new THREE.BoxGeometry(0.1, 0.12, 0.75);
-    const rifle = new THREE.Mesh(rifleGeo, this.materials.darkMetal);
-    rifle.position.set(0.2, 1.2, 0.35);
-    rifle.rotation.x = -0.2;
+    // --- PHASED PLASMA RIFLE (HELD IN HANDS) ---
+    const rifle = new THREE.Group();
+    VoxelBuilder.addBox(rifle, 0.12, 0.16, 0.65, this.materials.darkMetal, 0.04, 0.58, 0.32);
+    VoxelBuilder.addBox(rifle, 0.09, 0.09, 0.48, this.materials.chrome, 0.04, 0.60, 0.82);
+    const rifleEmitter = VoxelBuilder.addBox(rifle, 0.07, 0.07, 0.06, this.materials.cyanGlow, 0.04, 0.60, 1.08);
+    VoxelBuilder.addBox(rifle, 0.09, 0.20, 0.14, this.materials.gunmetal, 0.04, 0.44, 0.28);
+    VoxelBuilder.addBox(rifle, 0.05, 0.05, 0.22, this.materials.darkMetal, 0.04, 0.70, 0.38);
+    VoxelBuilder.addBox(rifle, 0.04, 0.04, 0.02, this.materials.redEye, 0.04, 0.70, 0.50);
     t800.add(rifle);
 
-    const rifleEmitter = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.2, 8),
-      this.materials.redEye
-    );
-    rifleEmitter.rotateX(Math.PI / 2);
-    rifleEmitter.position.set(0.2, 1.22, 0.75);
-    t800.add(rifleEmitter);
+    // --- LEFT LEG ---
+    const leftLeg = new THREE.Group();
+    leftLeg.position.set(-0.18, 0.76, 0);
+    VoxelBuilder.addBox(leftLeg, 0.14, 0.14, 0.14, this.materials.chrome, 0, 0, 0);
+    VoxelBuilder.addBox(leftLeg, 0.15, 0.36, 0.15, this.materials.darkMetal, 0, -0.22, 0);
+    VoxelBuilder.addBox(leftLeg, 0.18, 0.14, 0.18, this.materials.chrome, 0, -0.44, 0.02);
+    VoxelBuilder.addBox(leftLeg, 0.14, 0.36, 0.14, this.materials.chrome, 0, -0.66, 0);
+    VoxelBuilder.addBox(leftLeg, 0.06, 0.32, 0.06, this.materials.darkMetal, 0, -0.66, -0.08);
+    VoxelBuilder.addBox(leftLeg, 0.18, 0.10, 0.32, this.materials.darkMetal, 0, -0.89, 0.06);
+    t800.add(leftLeg);
 
-    // Legs
-    [-0.18, 0.18].forEach(x => {
-      const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.95, 8);
-      const leg = new THREE.Mesh(legGeo, this.materials.chrome);
-      leg.position.set(x, 0.48, 0);
-      t800.add(leg);
-
-      const footGeo = new THREE.BoxGeometry(0.12, 0.08, 0.24);
-      const foot = new THREE.Mesh(footGeo, this.materials.chrome);
-      foot.position.set(x, 0.04, 0.06);
-      t800.add(foot);
-    });
+    // --- RIGHT LEG ---
+    const rightLeg = new THREE.Group();
+    rightLeg.position.set(0.18, 0.76, 0);
+    VoxelBuilder.addBox(rightLeg, 0.14, 0.14, 0.14, this.materials.chrome, 0, 0, 0);
+    VoxelBuilder.addBox(rightLeg, 0.15, 0.36, 0.15, this.materials.darkMetal, 0, -0.22, 0);
+    VoxelBuilder.addBox(rightLeg, 0.18, 0.14, 0.18, this.materials.chrome, 0, -0.44, 0.02);
+    VoxelBuilder.addBox(rightLeg, 0.14, 0.36, 0.14, this.materials.chrome, 0, -0.66, 0);
+    VoxelBuilder.addBox(rightLeg, 0.06, 0.32, 0.06, this.materials.darkMetal, 0, -0.66, -0.08);
+    VoxelBuilder.addBox(rightLeg, 0.18, 0.10, 0.32, this.materials.darkMetal, 0, -0.89, 0.06);
+    t800.add(rightLeg);
 
     t800.userData = {
-      type: 't800',
-      radius: 0.6,
-      height: 2.0,
-      maxHp: 100,
-      damage: 18,
-      speed: 3.8,
-      attackRange: 45
+      head: head,
+      torso: torso,
+      leftArm: leftArm,
+      rightArm: rightArm,
+      leftLeg: leftLeg,
+      rightLeg: rightLeg,
+      rifleEmitter: rifleEmitter
     };
 
     return t800;
   },
 
-  // 2. HK-Aerial (Hunter-Killer Aerial Gunship)
+  // =========================================================================
+  // 3. 3D VOXEL HK-AERIAL (FLYING HUNTER-KILLER)
+  // =========================================================================
+
   createHKAerial() {
     this.initMaterials();
     const hk = new THREE.Group();
 
-    // Central Aerodynamic Fuselage
-    const bodyGeo = new THREE.ConeGeometry(0.9, 3.2, 8);
-    bodyGeo.rotateX(Math.PI / 2);
-    const body = new THREE.Mesh(bodyGeo, this.materials.darkMetal);
-    body.scale.set(1.3, 0.6, 1);
-    hk.add(body);
+    // Voxel Fuselage
+    VoxelBuilder.addBox(hk, 0.7, 0.45, 1.4, this.materials.gunmetal, 0, 0, 1.2);
+    VoxelBuilder.addBox(hk, 0.5, 0.12, 0.15, this.materials.redEye, 0, -0.05, 1.92); // optic scan visor
+    VoxelBuilder.addBox(hk, 1.5, 0.75, 2.4, this.materials.darkMetal, 0, 0.15, -0.1);
+    VoxelBuilder.addBox(hk, 0.8, 0.30, 2.0, this.materials.gunmetal, 0, 0.58, -0.2);
 
-    // Wing Pylons
-    const wingGeo = new THREE.BoxGeometry(4.2, 0.12, 0.8);
-    const wings = new THREE.Mesh(wingGeo, this.materials.chrome);
-    wings.position.set(0, 0.15, -0.3);
-    hk.add(wings);
+    // Twin Voxel Tail Fins
+    VoxelBuilder.addBox(hk, 0.12, 0.75, 0.9, this.materials.gunmetal, -0.55, 0.70, -1.2);
+    VoxelBuilder.addBox(hk, 0.12, 0.75, 0.9, this.materials.gunmetal, 0.55, 0.70, -1.2);
 
-    // Twin Tilt VTOL Turbines / Nacelles
-    [-2.1, 2.1].forEach(x => {
-      const turbineGeo = new THREE.CylinderGeometry(0.4, 0.45, 1.2, 12);
-      const turbine = new THREE.Mesh(turbineGeo, this.materials.darkMetal);
-      turbine.position.set(x, 0.2, -0.3);
-      turbine.rotation.x = Math.PI / 2;
-      hk.add(turbine);
+    // Left VTOL Turbine Engine
+    const leftTurbine = new THREE.Group();
+    leftTurbine.position.set(-1.95, 0.1, -0.1);
+    VoxelBuilder.addBox(hk, 1.2, 0.14, 0.6, this.materials.gunmetal, -1.35, 0.1, -0.1); // wing pylon
+    VoxelBuilder.addBox(leftTurbine, 0.85, 0.85, 2.0, this.materials.darkMetal, 0, 0, 0);
+    VoxelBuilder.addBox(leftTurbine, 0.75, 0.75, 0.15, this.materials.chrome, 0, 0, 0.95);
+    VoxelBuilder.addBox(leftTurbine, 0.70, 0.70, 0.25, this.materials.darkMetal, 0, 0, -1.15);
+    const leftFlare = VoxelBuilder.addBox(leftTurbine, 0.50, 0.50, 0.50, this.materials.cyanGlow, 0, 0, -1.50);
+    hk.add(leftTurbine);
 
-      // Glowing Exhaust Ring
-      const exhaustGeo = new THREE.RingGeometry(0.2, 0.38, 12);
-      const exhaust = new THREE.Mesh(exhaustGeo, this.materials.cyanGlow);
-      exhaust.position.set(x, 0.2, -0.91);
-      hk.add(exhaust);
-    });
+    // Right VTOL Turbine Engine
+    const rightTurbine = new THREE.Group();
+    rightTurbine.position.set(1.95, 0.1, -0.1);
+    VoxelBuilder.addBox(hk, 1.2, 0.14, 0.6, this.materials.gunmetal, 1.35, 0.1, -0.1); // wing pylon
+    VoxelBuilder.addBox(rightTurbine, 0.85, 0.85, 2.0, this.materials.darkMetal, 0, 0, 0);
+    VoxelBuilder.addBox(rightTurbine, 0.75, 0.75, 0.15, this.materials.chrome, 0, 0, 0.95);
+    VoxelBuilder.addBox(rightTurbine, 0.70, 0.70, 0.25, this.materials.darkMetal, 0, 0, -1.15);
+    const rightFlare = VoxelBuilder.addBox(rightTurbine, 0.50, 0.50, 0.50, this.materials.cyanGlow, 0, 0, -1.50);
+    hk.add(rightTurbine);
 
-    // Ventral Searchlight & Chin Plasma Cannons
-    const searchGeo = new THREE.SphereGeometry(0.25, 8, 8);
-    const searchlight = new THREE.Mesh(searchGeo, this.materials.redEye);
-    searchlight.position.set(0, -0.35, 0.8);
-    hk.add(searchlight);
+    // Chin Dual Plasma Cannon Turret
+    const turret = new THREE.Group();
+    turret.position.set(0, -0.35, 0.7);
+    VoxelBuilder.addBox(turret, 0.5, 0.25, 0.6, this.materials.darkMetal, 0, 0, 0);
+    VoxelBuilder.addBox(turret, 0.12, 0.12, 1.1, this.materials.chrome, -0.16, -0.06, 0.65);
+    VoxelBuilder.addBox(turret, 0.12, 0.12, 1.1, this.materials.chrome, 0.16, -0.06, 0.65);
+    VoxelBuilder.addBox(turret, 0.08, 0.08, 0.1, this.materials.redEye, 0, -0.02, 0.32);
+    hk.add(turret);
 
-    // Twin Plasma Barrels
-    [-0.35, 0.35].forEach(x => {
-      const gunGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.7, 8);
-      gunGeo.rotateX(Math.PI / 2);
-      const gun = new THREE.Mesh(gunGeo, this.materials.chrome);
-      gun.position.set(x, -0.32, 1.2);
-      hk.add(gun);
-    });
-
-    hk.position.y = 8; // Flies above ground
     hk.userData = {
-      type: 'hk_aerial',
-      radius: 2.2,
-      height: 1.5,
-      maxHp: 320,
-      damage: 28,
-      speed: 7.0,
-      attackRange: 80,
-      isFlying: true
+      leftTurbine: leftTurbine,
+      rightTurbine: rightTurbine,
+      turret: turret,
+      leftFlare: leftFlare,
+      rightFlare: rightFlare
     };
 
     return hk;
   },
 
-  // 3. HK-Tank (Hunter-Killer Ground Treaded Behemoth)
+  // =========================================================================
+  // 4. 3D VOXEL HK-TANK (GROUND HUNTER-KILLER TANK)
+  // =========================================================================
+
   createHKTank() {
     this.initMaterials();
     const tank = new THREE.Group();
 
-    // Dual Caterpillar Tracks
-    [-1.6, 1.6].forEach(x => {
-      const trackGeo = new THREE.BoxGeometry(0.8, 1.1, 4.4);
-      const track = new THREE.Mesh(trackGeo, this.materials.darkMetal);
-      track.position.set(x, 0.55, 0);
-      tank.add(track);
+    // --- LEFT CATERPILLAR TRACK ASSEMBLY ---
+    const leftTrack = new THREE.Group();
+    leftTrack.position.set(-1.8, 0.7, 0);
+    VoxelBuilder.addBox(leftTrack, 0.9, 1.3, 5.8, this.materials.darkMetal, 0, 0, 0);
+    // Voxel Tread Teeth
+    for (let z = -2.7; z <= 2.7; z += 0.45) {
+      VoxelBuilder.addBox(leftTrack, 0.95, 0.08, 0.25, this.materials.chrome, 0, 0.68, z);
+      VoxelBuilder.addBox(leftTrack, 0.95, 0.08, 0.25, this.materials.chrome, 0, -0.68, z);
+    }
+    VoxelBuilder.addBox(leftTrack, 0.15, 0.9, 5.2, this.materials.gunmetal, -0.52, 0.05, 0);
+    tank.add(leftTrack);
 
-      // Treads plates
-      for (let z = -2.0; z <= 2.0; z += 0.5) {
-        const plateGeo = new THREE.BoxGeometry(0.85, 0.12, 0.2);
-        const plate = new THREE.Mesh(plateGeo, this.materials.rustMetal);
-        plate.position.set(x, 1.1, z);
-        tank.add(plate);
-      }
-    });
+    // --- RIGHT CATERPILLAR TRACK ASSEMBLY ---
+    const rightTrack = new THREE.Group();
+    rightTrack.position.set(1.8, 0.7, 0);
+    VoxelBuilder.addBox(rightTrack, 0.9, 1.3, 5.8, this.materials.darkMetal, 0, 0, 0);
+    for (let z = -2.7; z <= 2.7; z += 0.45) {
+      VoxelBuilder.addBox(rightTrack, 0.95, 0.08, 0.25, this.materials.chrome, 0, 0.68, z);
+      VoxelBuilder.addBox(rightTrack, 0.95, 0.08, 0.25, this.materials.chrome, 0, -0.68, z);
+    }
+    VoxelBuilder.addBox(rightTrack, 0.15, 0.9, 5.2, this.materials.gunmetal, 0.52, 0.05, 0);
+    tank.add(rightTrack);
 
-    // Main Chassis
-    const hullGeo = new THREE.BoxGeometry(2.6, 0.9, 3.8);
-    const hull = new THREE.Mesh(hullGeo, this.materials.chrome);
-    hull.position.set(0, 1.0, 0);
-    tank.add(hull);
+    // --- CHASSIS ---
+    VoxelBuilder.addBox(tank, 2.8, 1.1, 4.8, this.materials.darkMetal, 0, 0.9, 0);
+    VoxelBuilder.addBox(tank, 2.6, 0.75, 1.6, this.materials.gunmetal, 0, 1.3, 1.9); // sloped glacis
+    VoxelBuilder.addBox(tank, 2.4, 0.40, 1.6, this.materials.darkMetal, 0, 1.45, -1.7); // rear deck
 
-    // Front Sloped Glacis
-    const glacisGeo = new THREE.BoxGeometry(2.4, 0.6, 1.2);
-    glacisGeo.rotateX(-0.4);
-    const glacis = new THREE.Mesh(glacisGeo, this.materials.gunmetal);
-    glacis.position.set(0, 1.1, 1.8);
-    tank.add(glacis);
+    // --- TURRET ---
+    const turret = new THREE.Group();
+    turret.position.set(0, 1.8, 0.2);
+    VoxelBuilder.addBox(turret, 2.6, 1.2, 2.8, this.materials.gunmetal, 0, 0.65, 0);
+    VoxelBuilder.addBox(turret, 0.3, 1.0, 2.6, this.materials.darkMetal, -1.25, 0.65, 0);
+    VoxelBuilder.addBox(turret, 0.3, 1.0, 2.6, this.materials.darkMetal, 1.25, 0.65, 0);
 
-    // Rotating Upper Turret
-    const turretGeo = new THREE.CylinderGeometry(1.2, 1.4, 0.8, 12);
-    const turret = new THREE.Mesh(turretGeo, this.materials.darkMetal);
-    turret.position.set(0, 1.8, -0.2);
+    // Dual Heavy Plasma Cannons
+    const barrels = new THREE.Group();
+    barrels.position.set(0, 0.7, 1.4);
+    VoxelBuilder.addBox(barrels, 1.8, 0.6, 0.7, this.materials.darkMetal, 0, 0, 0);
+    VoxelBuilder.addBox(barrels, 0.32, 0.32, 3.4, this.materials.chrome, -0.55, 0, 1.8);
+    VoxelBuilder.addBox(barrels, 0.32, 0.32, 3.4, this.materials.chrome, 0.55, 0, 1.8);
+    VoxelBuilder.addBox(barrels, 0.20, 0.20, 0.1, this.materials.cyanGlow, -0.55, 0, 3.52);
+    VoxelBuilder.addBox(barrels, 0.20, 0.20, 0.1, this.materials.cyanGlow, 0.55, 0, 3.52);
+    turret.add(barrels);
+
+    // Dual High-Intensity Searchlights
+    VoxelBuilder.addBox(turret, 0.4, 0.4, 0.4, this.materials.darkMetal, -1.1, 0.9, 1.2);
+    VoxelBuilder.addBox(turret, 0.3, 0.3, 0.05, this.materials.amberGlow, -1.1, 0.9, 1.42);
+    VoxelBuilder.addBox(turret, 0.4, 0.4, 0.4, this.materials.darkMetal, 1.1, 0.9, 1.2);
+    VoxelBuilder.addBox(turret, 0.3, 0.3, 0.05, this.materials.amberGlow, 1.1, 0.9, 1.42);
+
+    // Antenna mast
+    VoxelBuilder.addBox(turret, 0.1, 1.2, 0.1, this.materials.chrome, 0.8, 1.5, -0.8);
     tank.add(turret);
 
-    // Central Red Scanner Visor
-    const visorGeo = new THREE.BoxGeometry(0.8, 0.15, 0.3);
-    const visor = new THREE.Mesh(visorGeo, this.materials.redEye);
-    visor.position.set(0, 1.9, 0.9);
-    tank.add(visor);
-
-    // Twin Heavy Plasma Cannons
-    [-0.55, 0.55].forEach(x => {
-      const gunGeo = new THREE.CylinderGeometry(0.12, 0.14, 2.6, 12);
-      gunGeo.rotateX(Math.PI / 2);
-      const gun = new THREE.Mesh(gunGeo, this.materials.chrome);
-      gun.position.set(x, 1.85, 1.8);
-      tank.add(gun);
-
-      const muzzleCap = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.16, 0.12, 0.2, 12),
-        this.materials.redEye
-      );
-      muzzleCap.rotateX(Math.PI / 2);
-      muzzleCap.position.set(x, 1.85, 3.1);
-      tank.add(muzzleCap);
-    });
-
     tank.userData = {
-      type: 'hk_tank',
-      radius: 2.5,
-      height: 2.8,
-      maxHp: 550,
-      damage: 45,
-      speed: 2.8,
-      attackRange: 70
+      turret: turret,
+      barrels: barrels,
+      leftTrack: leftTrack,
+      rightTrack: rightTrack
     };
 
     return tank;
   },
 
-  // 4. G-500 / G-1000 Assault Drone
+  // =========================================================================
+  // 5. 3D VOXEL G-500 HUNTER DRONE
+  // =========================================================================
+
   createG500() {
     this.initMaterials();
     const drone = new THREE.Group();
 
-    // Central Pod
-    const podGeo = new THREE.DodecahedronGeometry(0.5, 0);
-    const pod = new THREE.Mesh(podGeo, this.materials.darkMetal);
-    pod.position.set(0, 1.3, 0);
-    drone.add(pod);
+    // Central Voxel Orb
+    VoxelBuilder.addBox(drone, 1.1, 1.1, 1.1, this.materials.darkMetal, 0, 0, 0);
+    VoxelBuilder.addBox(drone, 0.8, 0.8, 1.25, this.materials.gunmetal, 0, 0, 0);
+    const eye = VoxelBuilder.addBox(drone, 0.4, 0.4, 0.15, this.materials.redEye, 0, 0, 0.65);
 
-    // Glowing Sensor Ring
-    const eyeGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.1, 12);
-    eyeGeo.rotateX(Math.PI / 2);
-    const eye = new THREE.Mesh(eyeGeo, this.materials.redEye);
-    eye.position.set(0, 1.3, 0.48);
-    drone.add(eye);
+    // Quad Outrigger Thrusters
+    const thrusters = [];
+    const angles = [ [ -0.7, 0.7 ], [ 0.7, 0.7 ], [ -0.7, -0.7 ], [ 0.7, -0.7 ] ];
+    angles.forEach(([x, y]) => {
+      VoxelBuilder.addBox(drone, 0.35, 0.35, 0.9, this.materials.gunmetal, x, y, -0.1);
+      const flare = VoxelBuilder.addBox(drone, 0.22, 0.22, 0.25, this.materials.cyanGlow, x, y, -0.6);
+      thrusters.push(flare);
+    });
 
-    // Quad Hover Thrusters
-    for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2 + Math.PI / 4;
-      const x = Math.cos(angle) * 0.55;
-      const z = Math.sin(angle) * 0.55;
+    // Underslung Pulse Blaster
+    VoxelBuilder.addBox(drone, 0.15, 0.15, 0.6, this.materials.chrome, 0, -0.75, 0.2);
 
-      const thruster = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.1, 0.14, 0.3, 8),
-        this.materials.chrome
-      );
-      thruster.position.set(x, 1.15, z);
-      drone.add(thruster);
-
-      const glow = new THREE.Mesh(
-        new THREE.RingGeometry(0.04, 0.12, 8),
-        this.materials.amberGlow
-      );
-      glow.rotateX(Math.PI / 2);
-      glow.position.set(x, 0.99, z);
-      drone.add(glow);
-    }
-
-    drone.userData = {
-      type: 'g500',
-      radius: 0.7,
-      height: 1.6,
-      maxHp: 80,
-      damage: 14,
-      speed: 4.8,
-      attackRange: 40
-    };
-
+    drone.userData = { eye: eye, thrusters: thrusters };
     return drone;
   },
 
-  // 5. Spider Scout (Arachnid Infiltrator)
+  // =========================================================================
+  // 6. 3D VOXEL SPIDER SCOUT / SEEKER
+  // =========================================================================
+
   createSpiderScout() {
     this.initMaterials();
-    const spider = new THREE.Group();
+    const scout = new THREE.Group();
 
-    // Low chassis body
-    const bodyGeo = new THREE.BoxGeometry(0.5, 0.25, 0.6);
-    const body = new THREE.Mesh(bodyGeo, this.materials.darkMetal);
-    body.position.set(0, 0.35, 0);
-    spider.add(body);
+    // Armored Voxel Dome Body
+    VoxelBuilder.addBox(scout, 0.85, 0.40, 0.85, this.materials.darkMetal, 0, 0.35, 0);
+    VoxelBuilder.addBox(scout, 0.60, 0.20, 0.60, this.materials.gunmetal, 0, 0.58, 0);
+    const core = VoxelBuilder.addBox(scout, 0.35, 0.18, 0.35, this.materials.redEye, 0, 0.72, 0);
 
-    // Red Cluster Eyes
-    [-0.12, 0, 0.12].forEach(x => {
-      const eye = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 6, 6),
-        this.materials.redEye
-      );
-      eye.position.set(x, 0.4, 0.32);
-      spider.add(eye);
-    });
+    // 6 Segmented Voxel Legs
+    const legs = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (i * Math.PI) / 3;
+      const leg = new THREE.Group();
+      leg.position.set(Math.cos(angle) * 0.42, 0.35, Math.sin(angle) * 0.42);
+      leg.rotation.y = -angle;
 
-    // 4 Articulated Hydraulic Legs
-    for (let i = 0; i < 4; i++) {
-      const side = (i % 2 === 0) ? -1 : 1;
-      const frontBack = (i < 2) ? 0.2 : -0.2;
+      VoxelBuilder.addBox(leg, 0.10, 0.10, 0.40, this.materials.chrome, 0, 0.08, 0.20);
+      VoxelBuilder.addBox(leg, 0.08, 0.42, 0.08, this.materials.darkMetal, 0, -0.16, 0.40);
+      VoxelBuilder.addBox(leg, 0.06, 0.12, 0.12, this.materials.chrome, 0, -0.38, 0.44);
 
-      const legGroup = new THREE.Group();
-      legGroup.position.set(side * 0.25, 0.35, frontBack);
-
-      const upperLeg = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.03, 0.03, 0.4, 6),
-        this.materials.chrome
-      );
-      upperLeg.position.set(side * 0.18, 0.1, 0);
-      upperLeg.rotation.z = -side * 0.8;
-      legGroup.add(upperLeg);
-
-      const lowerLeg = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.02, 0.02, 0.45, 6),
-        this.materials.darkMetal
-      );
-      lowerLeg.position.set(side * 0.36, -0.15, 0);
-      lowerLeg.rotation.z = side * 0.5;
-      legGroup.add(lowerLeg);
-
-      spider.add(legGroup);
+      scout.add(leg);
+      legs.push(leg);
     }
 
-    spider.userData = {
-      type: 'spider',
-      radius: 0.5,
-      height: 0.6,
-      maxHp: 60,
-      damage: 15,
-      speed: 5.5,
-      attackRange: 30
-    };
-
-    return spider;
+    scout.userData = { core: core, legs: legs };
+    return scout;
   },
 
-  // 6. Automated Defense Turret (Ceiling or Ground)
+  // =========================================================================
+  // 7. 3D VOXEL DEFENSE TURRET
+  // =========================================================================
+
   createDefenseTurret(isCeiling = false) {
-    this.initMaterials();
-    const turret = new THREE.Group();
-
-    // Base Mounting Dome
-    const baseGeo = new THREE.CylinderGeometry(0.6, 0.7, 0.25, 12);
-    const base = new THREE.Mesh(baseGeo, this.materials.darkMetal);
-    turret.add(base);
-
-    // Swivel Turret Ball
-    const ballGeo = new THREE.SphereGeometry(0.4, 12, 12);
-    const ball = new THREE.Mesh(ballGeo, this.materials.chrome);
-    ball.position.set(0, isCeiling ? -0.3 : 0.3, 0);
-    turret.add(ball);
-
-    // Dual Laser Barrels
-    [-0.15, 0.15].forEach(x => {
-      const gunGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8);
-      gunGeo.rotateX(Math.PI / 2);
-      const gun = new THREE.Mesh(gunGeo, this.materials.gunmetal);
-      gun.position.set(x, isCeiling ? -0.3 : 0.3, 0.4);
-      turret.add(gun);
-    });
-
-    // Red Laser Targeting Dot
-    const dot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.05, 8, 8),
-      this.materials.redEye
-    );
-    dot.position.set(0, isCeiling ? -0.3 : 0.3, 0.45);
-    turret.add(dot);
-
-    turret.userData = {
-      type: 'turret',
-      radius: 0.6,
-      height: 0.8,
-      maxHp: 140,
-      damage: 20,
-      speed: 0, // Stationary
-      attackRange: 50
-    };
-
-    return turret;
-  },
-
-  // =========================================================================
-  // ENVIRONMENT MESHES & MISSION PROPS
-  // =========================================================================
-
-  // Ruined Skyscraper / Concrete Block
-  createRuinBuilding(width = 16, height = 32, depth = 16) {
     this.initMaterials();
     const group = new THREE.Group();
 
-    const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-    const building = new THREE.Mesh(buildingGeo, this.materials.concrete);
-    building.position.set(0, height / 2, 0);
-    group.add(building);
+    // Voxel Mounting Pedestal
+    VoxelBuilder.addBox(group, 1.4, 0.25, 1.4, this.materials.darkMetal, 0, 0.12, 0);
+    VoxelBuilder.addBox(group, 1.0, 0.30, 1.0, this.materials.gunmetal, 0, 0.35, 0);
 
-    // Shattered Top / Rubble variation
-    const rubbleCount = Math.floor(width / 4);
-    for (let i = 0; i < rubbleCount; i++) {
-      const rSize = 2 + Math.random() * 3;
-      const rGeo = new THREE.BoxGeometry(rSize, rSize * 1.5, rSize);
-      const rMesh = new THREE.Mesh(rGeo, this.materials.ruinBrick);
-      rMesh.position.set(
-        (Math.random() - 0.5) * (width - 2),
-        height + rSize / 2,
-        (Math.random() - 0.5) * (depth - 2)
-      );
-      rMesh.rotation.set(Math.random() * 0.3, Math.random() * 0.3, 0);
-      group.add(rMesh);
+    // Swivel Turret Bunker
+    const turret = new THREE.Group();
+    turret.position.set(0, 0.6, 0);
+    VoxelBuilder.addBox(turret, 0.9, 0.8, 0.9, this.materials.gunmetal, 0, 0.4, 0);
+    VoxelBuilder.addBox(turret, 0.2, 0.2, 0.1, this.materials.redEye, 0, 0.45, 0.48); // red targeting eye
+
+    // Twin Barrels
+    const barrels = new THREE.Group();
+    barrels.position.set(0, 0.45, 0.35);
+    VoxelBuilder.addBox(barrels, 0.12, 0.12, 1.1, this.materials.chrome, -0.22, 0, 0.55);
+    VoxelBuilder.addBox(barrels, 0.12, 0.12, 1.1, this.materials.chrome, 0.22, 0, 0.55);
+    VoxelBuilder.addBox(barrels, 0.08, 0.08, 0.06, this.materials.cyanGlow, -0.22, 0, 1.12);
+    VoxelBuilder.addBox(barrels, 0.08, 0.08, 0.06, this.materials.cyanGlow, 0.22, 0, 1.12);
+    turret.add(barrels);
+    group.add(turret);
+
+    if (isCeiling) {
+      group.rotation.x = Math.PI;
     }
 
+    group.userData = { turret: turret, barrels: barrels };
     return group;
   },
 
-  // Relay Tower (Mission 2 objective)
+  // =========================================================================
+  // 8. 3D VOXEL RUINED BUILDINGS & ARCHITECTURE
+  // =========================================================================
+
+  createRuinBuilding(width = 16, height = 32, depth = 16) {
+    this.initMaterials();
+    const building = new THREE.Group();
+
+    // Base Tier
+    const baseH = height * 0.45;
+    VoxelBuilder.addBox(building, width, baseH, depth, this.materials.ruinBrick, 0, baseH / 2, 0);
+
+    // Mid Tier
+    const midH = height * 0.35;
+    const midW = width * 0.85;
+    const midD = depth * 0.85;
+    VoxelBuilder.addBox(building, midW, midH, midD, this.materials.ruinBrick, 0, baseH + midH / 2, 0);
+
+    // Jagged Crumbling Top Voxel Spires
+    const topH = height * 0.20;
+    const spireW = midW * 0.45;
+    const spireD = midD * 0.45;
+    VoxelBuilder.addBox(building, spireW, topH, spireD, this.materials.ruinBrick, -spireW / 2, baseH + midH + topH / 2, 0);
+
+    // Exposed Twisted Rebar Beams
+    VoxelBuilder.addBox(building, 0.15, topH * 0.8, 0.15, this.materials.rustMetal, spireW * 0.3, baseH + midH + topH * 0.4, spireD * 0.3);
+    VoxelBuilder.addBox(building, 0.15, topH * 0.6, 0.15, this.materials.rustMetal, spireW * 0.1, baseH + midH + topH * 0.3, -spireD * 0.2);
+
+    // Hollowed Window Openings (Voxel Insets)
+    const winMat = this.materials.darkMetal;
+    for (let y = 4; y < baseH + midH - 4; y += 6) {
+      VoxelBuilder.addBox(building, 2.2, 3.0, 0.4, winMat, -width * 0.3, y, depth / 2 + 0.1);
+      VoxelBuilder.addBox(building, 2.2, 3.0, 0.4, winMat, width * 0.3, y, depth / 2 + 0.1);
+      VoxelBuilder.addBox(building, 2.2, 3.0, 0.4, winMat, -width * 0.3, y, -depth / 2 - 0.1);
+      VoxelBuilder.addBox(building, 2.2, 3.0, 0.4, winMat, width * 0.3, y, -depth / 2 - 0.1);
+    }
+
+    // Piles of Voxel Rubble Blocks Around the Base
+    const rubbleMat = this.materials.concrete;
+    const rubbleCoords = [
+      [ width * 0.4, depth * 0.55 ], [ -width * 0.45, depth * 0.52 ],
+      [ width * 0.52, -depth * 0.38 ], [ -width * 0.55, -depth * 0.42 ]
+    ];
+    rubbleCoords.forEach(([rx, rz]) => {
+      VoxelBuilder.addBox(building, 2.4, 1.2, 2.2, rubbleMat, rx, 0.6, rz);
+      VoxelBuilder.addBox(building, 1.4, 0.8, 1.4, this.materials.rustMetal, rx + 0.6, 1.4, rz);
+    });
+
+    return building;
+  },
+
+  // =========================================================================
+  // 9. 3D VOXEL MISSION STRUCTURES & OBJECTIVES
+  // =========================================================================
+
   createRelayTower() {
     this.initMaterials();
     const tower = new THREE.Group();
 
-    // Lattice frame
-    const mastGeo = new THREE.CylinderGeometry(0.2, 1.2, 18, 4);
-    const mast = new THREE.Mesh(mastGeo, this.materials.chrome);
-    mast.position.y = 9;
-    tower.add(mast);
+    // Voxel Concrete Base
+    VoxelBuilder.addBox(tower, 3.2, 0.6, 3.2, this.materials.concrete, 0, 0.3, 0);
 
-    // Satellite Dish
-    const dishGeo = new THREE.SphereGeometry(1.6, 12, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-    dishGeo.rotateX(Math.PI / 3);
-    const dish = new THREE.Mesh(dishGeo, this.materials.darkMetal);
-    dish.position.set(0, 16, 0.4);
-    tower.add(dish);
+    // 4-Legged Voxel Lattice Frame
+    const legCoords = [ [-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1] ];
+    legCoords.forEach(([lx, lz]) => {
+      VoxelBuilder.addBox(tower, 0.35, 12.0, 0.35, this.materials.darkMetal, lx, 6.6, lz);
+    });
 
-    // Red Blinking Beacon
-    const beacon = new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 8, 8),
-      this.materials.redEye
-    );
-    beacon.position.set(0, 18.2, 0);
-    tower.add(beacon);
+    // Horizontal Bracing Struts
+    for (let y = 3; y <= 11; y += 3) {
+      VoxelBuilder.addBox(tower, 2.4, 0.25, 0.25, this.materials.chrome, 0, y, 1.1);
+      VoxelBuilder.addBox(tower, 2.4, 0.25, 0.25, this.materials.chrome, 0, y, -1.1);
+      VoxelBuilder.addBox(tower, 0.25, 0.25, 2.4, this.materials.chrome, 1.1, y, 0);
+      VoxelBuilder.addBox(tower, 0.25, 0.25, 2.4, this.materials.chrome, -1.1, y, 0);
+    }
 
-    tower.userData = { isObjective: true, hp: 120, name: 'Relay Tower' };
+    // Top Platform & Dish
+    VoxelBuilder.addBox(tower, 2.8, 0.4, 2.8, this.materials.gunmetal, 0, 12.8, 0);
+    VoxelBuilder.addBox(tower, 1.8, 1.8, 0.3, this.materials.chrome, 0, 14.2, 0.8);
+    VoxelBuilder.addBox(tower, 0.2, 0.2, 0.8, this.materials.cyanGlow, 0, 14.2, 1.3);
+
+    // Blinking Red Beacon on Mast
+    VoxelBuilder.addBox(tower, 0.2, 3.0, 0.2, this.materials.chrome, 0, 15.5, -0.4);
+    VoxelBuilder.addBox(tower, 0.4, 0.4, 0.4, this.materials.redEye, 0, 17.2, -0.4);
+
     return tower;
   },
 
-  // Communications Grid (Mission 2 objective)
   createCommGrid() {
     this.initMaterials();
     const grid = new THREE.Group();
 
-    // Central Server Array
-    for (let x = -2; x <= 2; x += 1.3) {
-      const rackGeo = new THREE.BoxGeometry(0.8, 3.2, 1.4);
-      const rack = new THREE.Mesh(rackGeo, this.materials.darkMetal);
-      rack.position.set(x, 1.6, 0);
-      grid.add(rack);
+    // Mainframe Housing
+    VoxelBuilder.addBox(grid, 2.6, 2.2, 1.4, this.materials.darkMetal, 0, 1.1, 0);
 
-      // Blinking status lights
-      const ledMat = (x === 0) ? this.materials.greenGlow : this.materials.cyanGlow;
-      const led = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.1), ledMat);
-      led.position.set(x, 2.4, 0.71);
-      grid.add(led);
+    // Sloped Operator Console Desk
+    VoxelBuilder.addBox(grid, 2.4, 0.35, 0.9, this.materials.gunmetal, 0, 0.8, 0.8);
+
+    // Glowing 8-Bit Monitors & Data Banks
+    VoxelBuilder.addBox(grid, 1.0, 0.75, 0.08, this.materials.cyanGlow, -0.6, 1.6, 0.72);
+    VoxelBuilder.addBox(grid, 1.0, 0.75, 0.08, this.materials.greenGlow, 0.6, 1.6, 0.72);
+
+    // Tape Reels & Blinking Indicator LEDs
+    for (let y = 0.5; y <= 1.8; y += 0.35) {
+      VoxelBuilder.addBox(grid, 0.12, 0.12, 0.04, this.materials.amberGlow, 1.15, y, 0.72);
+      VoxelBuilder.addBox(grid, 0.12, 0.12, 0.04, this.materials.redEye, 1.15, y + 0.15, 0.72);
     }
 
-    grid.userData = { isObjective: true, hp: 150, name: 'Communications Grid' };
     return grid;
   },
 
-  // Time Distortion Device (Missions 3 & 6)
   createTimeDistortionDevice() {
     this.initMaterials();
-    const device = new THREE.Group();
+    const group = new THREE.Group();
 
-    // Pedestal Base
-    const baseGeo = new THREE.CylinderGeometry(1.4, 1.8, 0.8, 12);
-    const base = new THREE.Mesh(baseGeo, this.materials.darkMetal);
-    base.position.y = 0.4;
-    device.add(base);
+    // Stepped Voxel Octagonal Dais
+    VoxelBuilder.addBox(group, 7.5, 0.4, 7.5, this.materials.concrete, 0, 0.2, 0);
+    VoxelBuilder.addBox(group, 5.8, 0.35, 5.8, this.materials.darkMetal, 0, 0.55, 0);
+    VoxelBuilder.addBox(group, 4.2, 0.30, 4.2, this.materials.gunmetal, 0, 0.85, 0);
 
-    // Core Chronal Energy Orb
-    const orbGeo = new THREE.SphereGeometry(0.8, 16, 16);
-    const orb = new THREE.Mesh(orbGeo, this.materials.cyanGlow);
-    orb.position.y = 2.2;
-    device.add(orb);
+    // 4 Corner Temporal Emitter Pylons
+    const cornerOffsets = [ [-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4] ];
+    cornerOffsets.forEach(([cx, cz]) => {
+      VoxelBuilder.addBox(group, 0.7, 4.5, 0.7, this.materials.darkMetal, cx, 3.1, cz);
+      VoxelBuilder.addBox(group, 0.8, 0.3, 0.8, this.materials.chrome, cx, 5.4, cz);
+      VoxelBuilder.addBox(group, 0.5, 0.5, 0.5, this.materials.cyanGlow, cx, 5.8, cz);
+    });
 
-    // Rotating Gyro Rings
-    const ringGeo = new THREE.TorusGeometry(1.3, 0.08, 8, 24);
-    const ring1 = new THREE.Mesh(ringGeo, this.materials.chrome);
-    ring1.position.y = 2.2;
-    device.add(ring1);
+    // Central Voxel Temporal Portal Rings
+    const ring1 = new THREE.Group();
+    ring1.position.set(0, 3.2, 0);
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+      VoxelBuilder.addBox(ring1, 0.35, 0.35, 0.55, this.materials.chrome, Math.cos(a) * 2.2, Math.sin(a) * 2.2, 0);
+    }
+    group.add(ring1);
 
-    const ring2 = new THREE.Mesh(ringGeo, this.materials.chrome);
-    ring2.position.y = 2.2;
-    ring2.rotation.x = Math.PI / 2;
-    device.add(ring2);
+    const ring2 = new THREE.Group();
+    ring2.position.set(0, 3.2, 0);
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+      VoxelBuilder.addBox(ring2, 0.30, 0.30, 0.45, this.materials.amberGlow, Math.cos(a) * 1.6, 0, Math.sin(a) * 1.6);
+    }
+    group.add(ring2);
 
-    device.userData = {
-      isObjective: true,
-      name: 'Time Distortion Device',
-      ring1: ring1,
-      ring2: ring2
-    };
+    // Pulsing Central Chronal Energy Core
+    const core = VoxelBuilder.addBox(group, 0.9, 0.9, 0.9, this.materials.cyanGlow, 0, 3.2, 0);
 
-    return device;
+    group.userData = { ring1: ring1, ring2: ring2, core: core };
+    return group;
   },
 
-  // Skynet Reactor Core (Mission 8)
   createReactorCore() {
     this.initMaterials();
-    const reactor = new THREE.Group();
+    const group = new THREE.Group();
 
-    // Giant Cylinder Core
-    const coreGeo = new THREE.CylinderGeometry(2.5, 2.5, 12, 16, 1, true);
-    const coreMat = new THREE.MeshStandardMaterial({
-      color: 0x00e5ff,
-      emissive: 0x0066aa,
-      transparent: true,
-      opacity: 0.65,
-      roughness: 0.1
+    // Heavy Concrete & Steel Base
+    VoxelBuilder.addBox(group, 6.0, 0.8, 6.0, this.materials.concrete, 0, 0.4, 0);
+    VoxelBuilder.addBox(group, 4.8, 0.6, 4.8, this.materials.darkMetal, 0, 1.1, 0);
+
+    // 4 Heavy Magnetic Containment Pillars
+    const pCoords = [ [-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2] ];
+    pCoords.forEach(([px, pz]) => {
+      VoxelBuilder.addBox(group, 0.9, 6.5, 0.9, this.materials.gunmetal, px, 4.65, pz);
+      VoxelBuilder.addBox(group, 1.1, 0.3, 1.1, this.materials.hazard, px, 7.8, pz);
+      VoxelBuilder.addBox(group, 0.6, 0.6, 0.6, this.materials.redEye, px, 8.2, pz);
     });
-    const core = new THREE.Mesh(coreGeo, coreMat);
-    core.position.y = 6;
-    reactor.add(core);
 
-    // Pulsing Central Energy Rod
-    const rodGeo = new THREE.CylinderGeometry(0.8, 0.8, 14, 12);
-    const rod = new THREE.Mesh(rodGeo, this.materials.redEye);
-    rod.position.y = 6;
-    reactor.add(rod);
+    // Central Glowing Voxel Reactor Core
+    const core = VoxelBuilder.addBox(group, 2.2, 3.2, 2.2, this.materials.redEye, 0, 4.5, 0);
+    VoxelBuilder.addBox(group, 2.6, 0.4, 2.6, this.materials.chrome, 0, 6.2, 0);
+    VoxelBuilder.addBox(group, 2.6, 0.4, 2.6, this.materials.chrome, 0, 2.8, 0);
 
-    // 4 Containment Pylons
-    for (let i = 0; i < 4; i++) {
-      const angle = (i * Math.PI) / 2;
-      const x = Math.cos(angle) * 4.5;
-      const z = Math.sin(angle) * 4.5;
-
-      const pylonGeo = new THREE.CylinderGeometry(0.6, 0.9, 12, 8);
-      const pylon = new THREE.Mesh(pylonGeo, this.materials.chrome);
-      pylon.position.set(x, 6, z);
-      reactor.add(pylon);
+    // Rotating Containment Ring
+    const ring = new THREE.Group();
+    ring.position.set(0, 4.5, 0);
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+      VoxelBuilder.addBox(ring, 0.4, 0.4, 0.6, this.materials.cyanGlow, Math.cos(a) * 2.8, 0, Math.sin(a) * 2.8);
     }
+    group.add(ring);
 
-    reactor.userData = { isObjective: true, hp: 500, name: 'Skynet Reactor Core' };
-    return reactor;
+    group.userData = { core: core, ring: ring };
+    return group;
   },
 
-  // Blast Door (Interactive security door)
   createBlastDoor(label = 'ALPHA') {
     this.initMaterials();
-    const doorGroup = new THREE.Group();
+    const group = new THREE.Group();
 
-    // Door Frame
-    const frameGeo = new THREE.BoxGeometry(4.2, 5.2, 0.6);
-    const frame = new THREE.Mesh(frameGeo, this.materials.darkMetal);
-    frame.position.y = 2.5;
-    doorGroup.add(frame);
+    // Heavy Voxel Door Frame
+    VoxelBuilder.addBox(group, 0.8, 4.6, 0.8, this.materials.darkMetal, -2.2, 2.3, 0);
+    VoxelBuilder.addBox(group, 0.8, 4.6, 0.8, this.materials.darkMetal, 2.2, 2.3, 0);
+    VoxelBuilder.addBox(group, 5.2, 0.8, 0.8, this.materials.darkMetal, 0, 4.6, 0);
+    VoxelBuilder.addBox(group, 4.8, 0.3, 0.85, this.materials.hazard, 0, 4.3, 0); // hazard stripe header
 
-    // Sliding Door Panel
-    const panelGeo = new THREE.BoxGeometry(3.6, 4.6, 0.3);
-    const panel = new THREE.Mesh(panelGeo, this.materials.chrome);
-    panel.position.set(0, 2.5, 0);
-    doorGroup.add(panel);
+    // Left and Right Sliding Blast Leaves
+    VoxelBuilder.addBox(group, 1.8, 3.8, 0.45, this.materials.gunmetal, -0.9, 2.0, 0);
+    VoxelBuilder.addBox(group, 1.8, 3.8, 0.45, this.materials.gunmetal, 0.9, 2.0, 0);
 
-    // Door Label / Access Panel
-    const panelSign = new THREE.Mesh(
-      new THREE.BoxGeometry(0.8, 0.3, 0.05),
-      this.materials.redEye
-    );
-    panelSign.position.set(0, 3.8, 0.18);
-    doorGroup.add(panelSign);
+    // Hydraulic Locking Bolts & Warning Lamps
+    VoxelBuilder.addBox(group, 0.25, 0.45, 0.55, this.materials.chrome, 0, 2.0, 0);
+    VoxelBuilder.addBox(group, 0.25, 0.45, 0.55, this.materials.chrome, 0, 3.0, 0);
+    VoxelBuilder.addBox(group, 0.20, 0.20, 0.15, this.materials.redEye, -1.9, 3.6, 0.45);
+    VoxelBuilder.addBox(group, 0.20, 0.20, 0.15, this.materials.greenGlow, 1.9, 3.6, 0.45);
 
-    doorGroup.userData = {
-      isDoor: true,
-      code: label,
-      isOpen: false,
-      panel: panel,
-      openProgress: 0
-    };
-
-    return doorGroup;
+    return group;
   },
 
-  // Extraction Beacon / Pad
   createExtractionPad() {
     this.initMaterials();
     const pad = new THREE.Group();
 
-    const ringGeo = new THREE.CylinderGeometry(2.5, 2.8, 0.2, 16);
-    const ring = new THREE.Mesh(ringGeo, this.materials.darkMetal);
-    pad.add(ring);
+    // Stepped Voxel Octagonal Landing Platform
+    VoxelBuilder.addBox(pad, 12.0, 0.4, 12.0, this.materials.concrete, 0, 0.2, 0);
+    VoxelBuilder.addBox(pad, 10.0, 0.2, 10.0, this.materials.hazard, 0, 0.5, 0);
+    VoxelBuilder.addBox(pad, 7.5, 0.15, 7.5, this.materials.bunkerFloor, 0, 0.65, 0);
 
-    // Glowing green beacon ring
-    const glowGeo = new THREE.RingGeometry(1.2, 2.2, 16);
-    glowGeo.rotateX(-Math.PI / 2);
-    const glow = new THREE.Mesh(glowGeo, this.materials.greenGlow);
-    glow.position.y = 0.12;
-    pad.add(glow);
+    // Central Landing Target Symbol
+    VoxelBuilder.addBox(pad, 5.0, 0.05, 0.6, this.materials.cyanGlow, 0, 0.75, 0);
+    VoxelBuilder.addBox(pad, 0.6, 0.05, 5.0, this.materials.cyanGlow, 0, 0.75, 0);
 
-    // Vertical holographic extraction beam
-    const beamGeo = new THREE.CylinderGeometry(0.1, 1.8, 12, 12, 1, true);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: 0x00ff66,
-      transparent: true,
-      opacity: 0.35,
-      side: THREE.DoubleSide
+    // 4 Corner Voxel Beacon Pylons
+    const corners = [ [-5.2, -5.2], [5.2, -5.2], [-5.2, 5.2], [5.2, 5.2] ];
+    corners.forEach(([cx, cz]) => {
+      VoxelBuilder.addBox(pad, 0.7, 2.2, 0.7, this.materials.darkMetal, cx, 1.2, cz);
+      VoxelBuilder.addBox(pad, 0.8, 0.25, 0.8, this.materials.chrome, cx, 2.4, cz);
+      VoxelBuilder.addBox(pad, 0.4, 0.4, 0.4, this.materials.amberGlow, cx, 2.7, cz);
     });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.y = 6;
-    pad.add(beam);
 
     pad.userData = { isExtraction: true };
     return pad;
@@ -1059,7 +915,6 @@ const ModelFactory = {
     this.initMaterials();
     const group = new THREE.Group();
 
-    // Giant Panoramic Skyline Cylinder
     if (this.skylineTexture) {
       const cylGeo = new THREE.CylinderGeometry(radius, radius, height, 48, 1, true);
       const cylMat = new THREE.MeshBasicMaterial({
@@ -1072,7 +927,6 @@ const ModelFactory = {
       group.add(cyl);
     }
 
-    // Dynamic 3D Volumetric Searchlight Beams in the Night Sky
     const searchlightColors = [0x88ccff, 0x00e5ff, 0xff5555, 0x66ddff];
     for (let i = 0; i < 4; i++) {
       const angle = (i * Math.PI) / 2 + 0.35;
@@ -1098,43 +952,41 @@ const ModelFactory = {
     return group;
   },
 
-  // 3D Cinematic Showcase for Title Screen & Menus
+  // 3D Cinematic Voxel Showcase for Title Screen & Menus
   createTitleShowcase() {
     this.initMaterials();
     const showcase = new THREE.Group();
 
-    // Backdrop skyline
     const backdrop = this.createSkylineBackdrop(50, 45);
     backdrop.position.y = -5;
     showcase.add(backdrop);
 
-    // Ground platform with glowing grid
+    // Voxel Platform
     const floorGeo = new THREE.CylinderGeometry(15, 16, 0.4, 32);
     const floor = new THREE.Mesh(floorGeo, this.materials.concrete);
     floor.position.y = -0.2;
     showcase.add(floor);
 
-    // Glowing cyan cyber ring around platform
     const ringGeo = new THREE.RingGeometry(13.8, 14.6, 32);
     ringGeo.rotateX(-Math.PI / 2);
     const ring = new THREE.Mesh(ringGeo, this.materials.cyanGlow);
     ring.position.y = 0.02;
     showcase.add(ring);
 
-    // Iconic 3D T-800 Endoskeleton in center
+    // Voxel T-800 Endoskeleton in center
     const t800 = this.createT800();
     t800.position.set(0, 0, 0);
     t800.scale.set(1.4, 1.4, 1.4);
     showcase.add(t800);
 
-    // HK-Aerial hovering in sky
+    // Voxel HK-Aerial hovering in sky
     const hk = this.createHKAerial();
     hk.position.set(5, 5.5, -8);
     hk.scale.set(0.8, 0.8, 0.8);
     hk.rotation.y = -0.4;
     showcase.add(hk);
 
-    // Ruined buildings in background
+    // Voxel Ruined buildings in background
     const b1 = this.createRuinBuilding(8, 25, 8);
     b1.position.set(-14, 0, -18);
     showcase.add(b1);
@@ -1143,7 +995,6 @@ const ModelFactory = {
     b2.position.set(15, 0, -22);
     showcase.add(b2);
 
-    // Red and Cyan Dynamic Atmospheric Lights
     const redLight = new THREE.PointLight(0xff2222, 2.8, 25);
     redLight.position.set(0, 2.5, 3);
     showcase.add(redLight);

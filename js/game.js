@@ -129,15 +129,16 @@ class GameEngine {
     this.player.yawObject = this.yawObject;
     this.player.pitchObject = this.pitchObject;
 
-    // Renderer
+    // Renderer (8-Bit Voxel DOS Configuration)
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: false,
       powerPreference: 'high-performance'
     });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x060c14);
+
+    this.updateRendererResolution();
+    this.initPostProcess();
 
     // Lighting
     const hemiLight = new THREE.HemisphereLight(0x446688, 0x111622, 0.6);
@@ -148,10 +149,131 @@ class GameEngine {
     this.scene.add(dirLight);
 
     window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.updateRendererResolution();
     });
+  }
+
+  updateRendererResolution() {
+    if (!this.renderer) return;
+    const mode = (this.config && this.config.settings && this.config.settings.graphicsMode) || 'vga';
+    let tw = 384;
+    let th = 240;
+
+    const wWidth = typeof window !== 'undefined' ? (window.innerWidth || 800) : 800;
+    const wHeight = typeof window !== 'undefined' ? (window.innerHeight || 600) : 600;
+
+    if (mode === 'dos') {
+      tw = 320; th = 200;
+    } else if (mode === 'vga') {
+      tw = 384; th = 240;
+    } else if (mode === 'svga') {
+      tw = 640; th = 400;
+    } else {
+      tw = wWidth;
+      th = wHeight;
+    }
+
+    this.renderWidth = tw;
+    this.renderHeight = th;
+
+    if (this.renderer.setSize) {
+      this.renderer.setSize(tw, th, false);
+    }
+    if (this.camera) {
+      this.camera.aspect = wWidth / wHeight;
+      if (this.camera.updateProjectionMatrix) this.camera.updateProjectionMatrix();
+    }
+    if (this.renderTarget && this.renderTarget.setSize) {
+      this.renderTarget.setSize(tw, th);
+    }
+  }
+
+  initPostProcess() {
+    if (typeof THREE === 'undefined' || !THREE.WebGLRenderTarget || !THREE.ShaderMaterial || !this.renderer) return;
+    try {
+      this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      this.postScene = new THREE.Scene();
+      const tw = this.renderWidth || 384;
+      const th = this.renderHeight || 240;
+
+      this.renderTarget = new THREE.WebGLRenderTarget(tw, th, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter
+      });
+
+      this.postMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          tDiffuse: { value: null },
+          uResolution: { value: new THREE.Vector2(tw, th) },
+          uEnableDither: { value: 1.0 },
+          uEnableScanlines: { value: 1.0 }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform vec2 uResolution;
+          uniform float uEnableDither;
+          uniform float uEnableScanlines;
+          varying vec2 vUv;
+
+          float getBayer4x4(vec2 coord) {
+            int x = int(mod(coord.x, 4.0));
+            int y = int(mod(coord.y, 4.0));
+            int index = y * 4 + x;
+            if (index == 0) return 0.0 / 16.0;
+            if (index == 1) return 8.0 / 16.0;
+            if (index == 2) return 2.0 / 16.0;
+            if (index == 3) return 10.0 / 16.0;
+            if (index == 4) return 12.0 / 16.0;
+            if (index == 5) return 4.0 / 16.0;
+            if (index == 6) return 14.0 / 16.0;
+            if (index == 7) return 6.0 / 16.0;
+            if (index == 8) return 3.0 / 16.0;
+            if (index == 9) return 11.0 / 16.0;
+            if (index == 10) return 1.0 / 16.0;
+            if (index == 11) return 9.0 / 16.0;
+            if (index == 12) return 15.0 / 16.0;
+            if (index == 13) return 7.0 / 16.0;
+            if (index == 14) return 13.0 / 16.0;
+            return 5.0 / 16.0;
+          }
+
+          void main() {
+            vec4 tex = texture2D(tDiffuse, vUv);
+            vec3 col = tex.rgb;
+
+            if (uEnableDither > 0.5) {
+              float dither = getBayer4x4(gl_FragCoord.xy) - 0.5;
+              col += dither * (1.0 / 12.0);
+              // 8-Bit Color Quantization (3 bits Red, 3 bits Green, 2 bits Blue)
+              col.r = floor(col.r * 7.0 + 0.5) / 7.0;
+              col.g = floor(col.g * 7.0 + 0.5) / 7.0;
+              col.b = floor(col.b * 3.0 + 0.5) / 3.0;
+            }
+
+            if (uEnableScanlines > 0.5) {
+              float scan = sin(vUv.y * uResolution.y * 3.14159) * 0.08;
+              col -= scan;
+            }
+
+            gl_FragColor = vec4(clamp(col, 0.0, 1.0), tex.a);
+          }
+        `
+      });
+
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMaterial);
+      this.postScene.add(quad);
+    } catch (e) {
+      console.warn("8-bit post-process shader unavailable, falling back to direct low-res buffer:", e);
+      this.postMaterial = null;
+      this.renderTarget = null;
+    }
   }
 
   // =========================================================================
@@ -744,6 +866,37 @@ class GameEngine {
       invertY.checked = s.invertY;
       invertY.onchange = (e) => {
         s.invertY = e.target.checked;
+        this.config.save();
+      };
+    }
+
+    // Graphics Resolution Mode
+    const gfxSelect = document.getElementById('setting-graphics-mode');
+    if (gfxSelect) {
+      gfxSelect.value = s.graphicsMode || 'vga';
+      gfxSelect.onchange = (e) => {
+        s.graphicsMode = e.target.value;
+        this.updateRendererResolution();
+        this.config.save();
+      };
+    }
+
+    // 8-Bit Color Dithering toggle
+    const ditherToggle = document.getElementById('setting-dither-toggle');
+    if (ditherToggle) {
+      ditherToggle.checked = s.dithering8bit !== false;
+      ditherToggle.onchange = (e) => {
+        s.dithering8bit = e.target.checked;
+        this.config.save();
+      };
+    }
+
+    // Voxel Debris Physics toggle
+    const debrisToggle = document.getElementById('setting-voxel-debris-toggle');
+    if (debrisToggle) {
+      debrisToggle.checked = s.voxelDebris !== false;
+      debrisToggle.onchange = (e) => {
+        s.voxelDebris = e.target.checked;
         this.config.save();
       };
     }
@@ -2239,11 +2392,10 @@ class GameEngine {
     const boltSpeed = (weapon.projSpeed || 90) * 1.6;
     const flightTime = Math.min(boltDist / boltSpeed, 1.2);
 
-    const projGeo = new THREE.CylinderGeometry(0.045 * weapon.projScale, 0.045 * weapon.projScale, 1.4 * weapon.projScale, 8);
-    projGeo.rotateX(Math.PI / 2);
+    // 3D Voxel Plasma Bolt Projectile
+    const projGeo = new THREE.BoxGeometry(0.12 * weapon.projScale, 0.12 * weapon.projScale, 1.4 * weapon.projScale);
     const projMat = new THREE.MeshBasicMaterial({
-      color: weapon.projColor,
-      blending: THREE.AdditiveBlending
+      color: weapon.projColor
     });
     const projMesh = new THREE.Mesh(projGeo, projMat);
     projMesh.position.copy(muzzlePos);
@@ -2300,8 +2452,9 @@ class GameEngine {
     const spawnPos = this.yawObject.position.clone();
     const dir = this.player.getForwardVector();
 
+    // 3D Voxel Fusion Grenade Canister
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.12, 0.35, 8),
+      new THREE.BoxGeometry(0.24, 0.24, 0.36),
       ModelFactory.materials.hazard
     );
     mesh.position.copy(spawnPos);
@@ -2334,11 +2487,11 @@ class GameEngine {
     const spawnPos = this.yawObject.position.clone();
     const dir = this.player.getForwardVector();
 
+    // 3D Voxel Hyper-Velocity Missile
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, 0.7, 8),
+      new THREE.BoxGeometry(0.18, 0.18, 0.75),
       ModelFactory.materials.chrome
     );
-    mesh.rotateX(Math.PI / 2);
     mesh.position.copy(spawnPos);
     this.scene.add(mesh);
 
@@ -2359,13 +2512,14 @@ class GameEngine {
     const pos = this.yawObject.position.clone();
     pos.y = 0.1;
 
+    // 3D Voxel Proximity Mine
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.4, 0.5, 0.15, 12),
+      new THREE.BoxGeometry(0.50, 0.16, 0.50),
       ModelFactory.materials.darkMetal
     );
     mesh.position.copy(pos);
 
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), ModelFactory.materials.redEye);
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.14), ModelFactory.materials.redEye);
     led.position.set(0, 0.1, 0);
     mesh.add(led);
 
@@ -2475,9 +2629,11 @@ class GameEngine {
     light.position.copy(pos);
     this.scene.add(light);
 
-    // Fireball mesh
-    const fireGeo = new THREE.SphereGeometry(2.5 * scale, 12, 12);
-    const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4400, wireframe: true });
+    // 3D Voxel Fireball Core
+    const fireGeo = new THREE.BoxGeometry(2.2 * scale, 2.2 * scale, 2.2 * scale);
+    const fireMat = (ModelFactory.materials && ModelFactory.materials.debrisFire)
+      ? ModelFactory.materials.debrisFire
+      : new THREE.MeshBasicMaterial({ color: 0xff4400 });
     const fireball = new THREE.Mesh(fireGeo, fireMat);
     fireball.position.copy(pos);
     this.scene.add(fireball);
@@ -2485,10 +2641,54 @@ class GameEngine {
     this.particles.push({
       mesh: fireball,
       light: light,
-      life: 0.5,
-      maxLife: 0.5,
-      growRate: 6 * scale
+      life: 0.45,
+      maxLife: 0.45,
+      growRate: 5 * scale
     });
+
+    // 3D Voxel Debris Physics System (Tumbling & Bouncing Voxel Fragments)
+    if (this.config && this.config.settings && this.config.settings.voxelDebris !== false && typeof VoxelBuilder !== 'undefined') {
+      const debrisCount = Math.min(28, Math.floor(16 * scale));
+      const mats = ModelFactory.materials ? [
+        ModelFactory.materials.debrisMetal || ModelFactory.materials.chrome,
+        ModelFactory.materials.debrisFire || ModelFactory.materials.orangeGlow,
+        ModelFactory.materials.debrisSmoke || ModelFactory.materials.darkMetal,
+        ModelFactory.materials.chrome
+      ] : [fireMat];
+
+      for (let i = 0; i < debrisCount; i++) {
+        const dSize = (0.12 + Math.random() * 0.16) * scale;
+        const dMat = mats[i % mats.length];
+        const dMesh = VoxelBuilder.createBox(dSize, dSize, dSize, dMat);
+        dMesh.position.copy(pos);
+        dMesh.position.x += (Math.random() - 0.5) * 0.6 * scale;
+        dMesh.position.y += (Math.random() - 0.5) * 0.6 * scale;
+        dMesh.position.z += (Math.random() - 0.5) * 0.6 * scale;
+        this.scene.add(dMesh);
+
+        const spd = (5 + Math.random() * 11) * scale;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 0.45;
+
+        this.particles.push({
+          mesh: dMesh,
+          isVoxelDebris: true,
+          baseScale: 1.0,
+          velocity: new THREE.Vector3(
+            Math.sin(phi) * Math.cos(theta) * spd,
+            Math.cos(phi) * spd + 3.5 * scale,
+            Math.sin(phi) * Math.sin(theta) * spd
+          ),
+          rotVel: new THREE.Vector3(
+            (Math.random() - 0.5) * 12,
+            (Math.random() - 0.5) * 12,
+            (Math.random() - 0.5) * 12
+          ),
+          life: 1.2 + Math.random() * 1.4,
+          maxLife: 2.6
+        });
+      }
+    }
 
     // Radial Damage to nearby enemies & player
     this.enemies.forEach(e => {
@@ -2740,7 +2940,19 @@ class GameEngine {
       }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // Render through 8-Bit Bayer Dithering Pipeline or Direct Low-Res Buffer
+    if (this.postMaterial && this.renderTarget && this.config && this.config.settings && this.config.settings.dithering8bit) {
+      this.renderer.setRenderTarget(this.renderTarget);
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setRenderTarget(null);
+
+      this.postMaterial.uniforms.tDiffuse.value = this.renderTarget.texture;
+      this.postMaterial.uniforms.uResolution.value.set(this.renderWidth || 384, this.renderHeight || 240);
+      this.postMaterial.uniforms.uEnableScanlines.value = this.config.settings.crtScanlines ? 1.0 : 0.0;
+      this.renderer.render(this.postScene, this.postCamera);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   updatePlayer(dt) {
@@ -2853,10 +3065,44 @@ class GameEngine {
       enemy.mesh.lookAt(playerPos.x, enemy.mesh.position.y, playerPos.z);
 
       // Move toward player if in range
+      let isMoving = false;
       if (dist < enemy.attackRange && dist > 8.0) {
         const dir = playerPos.clone().sub(enemy.mesh.position).normalize();
         if (!enemy.isFlying) dir.y = 0;
         enemy.mesh.position.addScaledVector(dir, enemy.speed * dt);
+        isMoving = true;
+      }
+
+      // Procedural Voxel Articulated Animations
+      const ud = enemy.mesh.userData;
+      if (ud) {
+        // T-800 Voxel Walking Strides & Scanning Head
+        if (ud.leftLeg && ud.rightLeg) {
+          const walkFreq = isMoving ? 8.5 : 1.2;
+          const walkAmp = isMoving ? 0.45 : 0.04;
+          const phase = Math.sin(now * walkFreq);
+          ud.leftLeg.rotation.x = phase * walkAmp;
+          ud.rightLeg.rotation.x = -phase * walkAmp;
+          if (ud.leftArm) ud.leftArm.rotation.x = -phase * (walkAmp * 0.7);
+          if (ud.rightArm) ud.rightArm.rotation.x = phase * (walkAmp * 0.4);
+          if (ud.head) ud.head.rotation.y = Math.sin(now * 1.5) * 0.12;
+        }
+
+        // HK Aerial Voxel Hovering & Banking
+        if (enemy.isFlying && ud.leftTurbine && ud.rightTurbine) {
+          enemy.mesh.position.y += Math.sin(now * 2.8) * 0.015;
+          enemy.mesh.rotation.z = Math.sin(now * 1.6) * 0.08;
+          if (ud.leftFlare && ud.rightFlare) {
+            const flicker = 0.8 + Math.sin(now * 25.0) * 0.25;
+            ud.leftFlare.scale.set(flicker, flicker, flicker * 1.3);
+            ud.rightFlare.scale.set(flicker, flicker, flicker * 1.3);
+          }
+        }
+
+        // HK Tank Heavy Turret Tracking
+        if (ud.turret && ud.barrels) {
+          ud.barrels.rotation.x = Math.sin(now * 1.4) * 0.05;
+        }
       }
 
       // Attack player
@@ -2874,8 +3120,8 @@ class GameEngine {
 
     const dir = this.yawObject.position.clone().sub(spawnPos).normalize();
 
-    const boltGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.4, 6);
-    boltGeo.rotateX(Math.PI / 2);
+    // 3D Voxel Enemy Red Plasma Bolt
+    const boltGeo = new THREE.BoxGeometry(0.12, 0.12, 1.4);
     const boltMat = ModelFactory.materials.redEye;
     const bolt = new THREE.Mesh(boltGeo, boltMat);
 
@@ -2997,7 +3243,31 @@ class GameEngine {
       const pt = this.particles[i];
       pt.life -= dt;
 
-      if (pt.isPointSystem) {
+      if (pt.isVoxelDebris) {
+        // 3D Voxel Fragment Ballistics & Ground Bounce
+        pt.velocity.y -= 18.0 * dt;
+        pt.mesh.position.addScaledVector(pt.velocity, dt);
+        if (pt.rotVel) {
+          pt.mesh.rotation.x += pt.rotVel.x * dt;
+          pt.mesh.rotation.y += pt.rotVel.y * dt;
+          pt.mesh.rotation.z += pt.rotVel.z * dt;
+        }
+
+        // Bounce on pavement
+        if (pt.mesh.position.y <= 0.08) {
+          pt.mesh.position.y = 0.08;
+          pt.velocity.y = -pt.velocity.y * 0.45;
+          pt.velocity.x *= 0.70;
+          pt.velocity.z *= 0.70;
+        }
+
+        // Shrink voxels smoothly as life expires
+        const progress = Math.max(0, pt.life / pt.maxLife);
+        if (progress < 0.35) {
+          const sc = progress / 0.35;
+          pt.mesh.scale.set(sc, sc, sc);
+        }
+      } else if (pt.isPointSystem) {
         const posAttr = pt.pSystem.geometry.attributes.position;
         const arr = posAttr.array;
         for (let j = 0; j < pt.velocities.length / 3; j++) {
