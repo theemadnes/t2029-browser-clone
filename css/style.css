@@ -876,14 +876,18 @@ body.no-crt #crt-overlay {
 /* ARMORY & SUIT LOADOUT */
 .armory-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
 }
 
 .armory-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  background: rgba(10, 18, 28, 0.6);
+  border: 1px solid #162a3d;
+  padding: 12px;
+  border-radius: 3px;
 }
 
 .loadout-slot-card {
@@ -899,8 +903,9 @@ body.no-crt #crt-overlay {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 280px;
+  max-height: 380px;
   overflow-y: auto;
+  padding-right: 4px;
 }
 
 .item-option {
@@ -912,6 +917,7 @@ body.no-crt #crt-overlay {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  user-select: none;
 }
 
 .item-option:hover {
@@ -920,8 +926,36 @@ body.no-crt #crt-overlay {
 }
 
 .item-option.active {
-  border-color: var(--term-green);
-  background: #0d2822;
+  border-color: var(--term-cyan);
+  background: #092233;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.25);
+}
+
+.term-btn.mini {
+  padding: 2px 8px;
+  font-size: 11px;
+  min-width: 24px;
+  line-height: 1.3;
+  background: #112233;
+  border: 1px solid #234567;
+  color: #cbe3eb;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.term-btn.mini:hover {
+  border-color: var(--term-cyan);
+  color: #fff;
+  background: #193855;
+}
+
+.weapon-slot {
+  cursor: pointer;
+  user-select: none;
+}
+
+.weapon-slot:hover {
+  border-color: var(--term-cyan);
 }
 
 /* SETTINGS & CONTROLS REBINDING */

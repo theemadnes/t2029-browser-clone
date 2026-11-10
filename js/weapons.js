@@ -237,7 +237,35 @@ class LoadoutManager {
   setSecondary(id) {
     if (WEAPON_REGISTRY[id] && WEAPON_REGISTRY[id].type === 'secondary') {
       this.secondaryWeapon = id;
+      if (!this.ammo[id] || this.ammo[id] <= 0) {
+        this.ammo[id] = WEAPON_REGISTRY[id].defaultAmmo || 4;
+      }
     }
+  }
+
+  setAmmo(id, count) {
+    const reg = WEAPON_REGISTRY[id];
+    const max = reg && reg.maxAmmo ? reg.maxAmmo : 20;
+    this.ammo[id] = Math.max(0, Math.min(max, count));
+  }
+
+  addAmmo(id, delta) {
+    const current = this.ammo[id] || 0;
+    this.setAmmo(id, current + delta);
+  }
+
+  getSecondaryAmmo(id) {
+    return this.ammo[id] || 0;
+  }
+
+  getInventoryCount(id) {
+    let count = 0;
+    for (let i = 0; i < 5; i++) {
+      if (this.inventory[i] && this.inventory[i].id === id) {
+        count += (this.inventory[i].count || 1);
+      }
+    }
+    return count;
   }
 
   setInventorySlot(slotIndex, itemId, count = 1) {

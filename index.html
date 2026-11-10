@@ -240,10 +240,10 @@
 
     <!-- 4. ARMORY & LOADOUT SCREEN -->
     <div class="modal-layer hidden" id="armory-screen">
-      <div class="terminal-window">
+      <div class="terminal-window" style="max-width: 960px; width: 94%;">
         <div class="terminal-header">
           <div class="terminal-header-title">A.C.E. SUIT ARMORY & HARDPOINTS</div>
-          <div class="terminal-header-sub">WEAPONS & SPECIALIZED HARDWARE</div>
+          <div class="terminal-header-sub">WEAPONS, ORDNANCE & TACTICAL HARDWARE</div>
         </div>
         <div class="terminal-body">
           <div class="armory-layout">
@@ -252,14 +252,23 @@
               <div class="item-picker-list" id="armory-pri-list"></div>
             </div>
             <div class="armory-section">
-              <div class="intel-heading">SECONDARY ORDNANCE</div>
+              <div class="intel-heading">SECONDARY ORDNANCE & AMMO</div>
               <div class="item-picker-list" id="armory-sec-list"></div>
+            </div>
+            <div class="armory-section">
+              <div class="intel-heading">SUIT HARDWARE & INVENTORY</div>
+              <div class="item-picker-list" id="armory-gear-list"></div>
             </div>
           </div>
         </div>
-        <div class="terminal-footer">
-          <button class="term-btn" id="btn-armory-back">BACK TO BRIEFING</button>
-          <button class="term-btn primary" id="btn-armory-deploy">CONFIRM & DEPLOY</button>
+        <div class="terminal-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <button class="term-btn" id="btn-armory-reset">RESET TO MISSION DEFAULT</button>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button class="term-btn" id="btn-armory-back">BACK</button>
+            <button class="term-btn primary" id="btn-armory-deploy">CONFIRM & DEPLOY</button>
+          </div>
         </div>
       </div>
     </div>

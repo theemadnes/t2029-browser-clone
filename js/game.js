@@ -80,6 +80,8 @@ class GameEngine {
     this.hud = null;
     this.audio = window.AudioSys;
     this.config = window.GameConfig;
+    this.lastMissionLoadoutPresetId = null;
+    this.armoryOpenedFromTitle = false;
 
     // Bind event handlers
     this.initInputs();
@@ -180,6 +182,9 @@ class GameEngine {
       if (this.state === 'PLAYING' && e.code === this.config.settings.keybindings.cycleWeapon) {
         this.cyclePrimaryWeapon();
       }
+      if (this.state === 'PLAYING' && (e.code === this.config.settings.keybindings.cycleSecondary || e.code === 'KeyT')) {
+        this.cycleSecondaryWeapon();
+      }
 
       // Hotkeys for inventory 1-5
       if (this.state === 'PLAYING') {
@@ -261,7 +266,7 @@ class GameEngine {
     if (btnQuickstart) btnQuickstart.onclick = () => this.startMission(1);
     if (btnCampaign) btnCampaign.onclick = () => this.showMissionSelect();
     if (btnTraining) btnTraining.onclick = () => this.startMission('training');
-    if (btnArmory) btnArmory.onclick = () => this.showArmory();
+    if (btnArmory) btnArmory.onclick = () => this.showArmory(true);
     if (btnSettings) btnSettings.onclick = () => this.showSettings();
     if (btnIntel) btnIntel.onclick = () => this.showIntel();
 
@@ -271,14 +276,45 @@ class GameEngine {
     const btnBriefingBack = document.getElementById('btn-briefing-back');
 
     if (btnStartMission) btnStartMission.onclick = () => this.startMission(this.currentMissionId);
-    if (btnBriefingArmory) btnBriefingArmory.onclick = () => this.showArmory();
+    if (btnBriefingArmory) btnBriefingArmory.onclick = () => this.showArmory(false);
     if (btnBriefingBack) btnBriefingBack.onclick = () => this.showTitleScreen();
 
     // Armory buttons
     const btnArmoryDeploy = document.getElementById('btn-armory-deploy');
     const btnArmoryBack = document.getElementById('btn-armory-back');
+    const btnArmoryReset = document.getElementById('btn-armory-reset');
     if (btnArmoryDeploy) btnArmoryDeploy.onclick = () => this.startMission(this.currentMissionId);
-    if (btnArmoryBack) btnArmoryBack.onclick = () => this.showBriefing(this.currentMissionId);
+    if (btnArmoryBack) {
+      btnArmoryBack.onclick = () => {
+        if (this.armoryOpenedFromTitle) {
+          this.showTitleScreen();
+        } else {
+          this.showBriefing(this.currentMissionId);
+        }
+      };
+    }
+    if (btnArmoryReset) {
+      btnArmoryReset.onclick = () => {
+        this.player.loadout.applyMissionPreset(this.currentMissionId);
+        this.populateArmoryUI();
+        this.audio.playUI('click');
+        this.hud.addCommMessage('ARMORY', 'Standard mission loadout restored.', 'normal');
+      };
+    }
+
+    // HUD weapon slots cycling via click
+    const priHudName = document.getElementById('weapon-pri-name');
+    if (priHudName && priHudName.parentElement) {
+      priHudName.parentElement.onclick = () => {
+        if (this.state === 'PLAYING') this.cyclePrimaryWeapon();
+      };
+    }
+    const secHudName = document.getElementById('weapon-sec-name');
+    if (secHudName && secHudName.parentElement) {
+      secHudName.parentElement.onclick = () => {
+        if (this.state === 'PLAYING') this.cycleSecondaryWeapon();
+      };
+    }
 
     // Settings buttons
     const btnSettingsClose = document.getElementById('btn-settings-close');
@@ -404,6 +440,10 @@ class GameEngine {
   showBriefing(missionId) {
     this.state = 'BRIEFING';
     this.currentMissionId = missionId;
+    if (this.lastMissionLoadoutPresetId !== missionId) {
+      this.player.loadout.applyMissionPreset(missionId);
+      this.lastMissionLoadoutPresetId = missionId;
+    }
     const mission = MISSIONS_DATA[missionId];
 
     document.getElementById('briefing-title').textContent = mission.title;
@@ -426,50 +466,243 @@ class GameEngine {
     this.audio.playTrack('briefing');
   }
 
-  showArmory() {
+  showArmory(fromTitle = false) {
+    this.armoryOpenedFromTitle = fromTitle;
     this.state = 'ARMORY';
+    if (!this.lastMissionLoadoutPresetId) {
+      this.player.loadout.applyMissionPreset(this.currentMissionId || 1);
+      this.lastMissionLoadoutPresetId = this.currentMissionId || 1;
+    }
     this.populateArmoryUI();
     this.showModal('armory-screen');
   }
 
   populateArmoryUI() {
     const loadout = this.player.loadout;
-    loadout.applyMissionPreset(this.currentMissionId);
 
-    // Primary weapon options
+    // 1. Primary PPC hardpoints
     const priContainer = document.getElementById('armory-pri-list');
     if (priContainer) {
       priContainer.innerHTML = '';
       ['ppc_40w', 'ppc_60w', 'ppc_80w', 'ppc_100w'].forEach(id => {
         const item = WEAPON_REGISTRY[id];
+        const isEquipped = (loadout.primaryWeapon === id);
         const div = document.createElement('div');
-        div.className = `item-option ${loadout.primaryWeapon === id ? 'active' : ''}`;
-        div.innerHTML = `<div><strong>${item.name}</strong><br><small>${item.desc}</small></div>`;
+        div.className = `item-option ${isEquipped ? 'active' : ''}`;
+        div.innerHTML = `
+          <div style="flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="color: ${isEquipped ? 'var(--term-cyan)' : '#e0eef7'};">${item.name}</strong>
+              <span style="font-size: 10px; color: ${isEquipped ? 'var(--term-cyan)' : '#6f8fa4'}; font-weight: bold; border: 1px solid ${isEquipped ? 'var(--term-cyan)' : '#345'}; padding: 1px 6px; border-radius: 2px;">
+                ${isEquipped ? 'EQUIPPED' : 'SELECT'}
+              </span>
+            </div>
+            <div style="font-size: 11px; color: #7fa0b8; margin: 4px 0 2px 0;">
+              DMG: ${item.damage} | RATE: ${item.fireRate}s | HEAT: +${item.heatPerShot}% | RNG: ${item.range}m
+            </div>
+            <small style="color: #92a9ba; font-size: 10px; line-height: 1.25; display: block;">${item.desc}</small>
+          </div>
+        `;
         div.onclick = () => {
           loadout.setPrimary(id);
+          this.updateWeaponViewModel();
           this.populateArmoryUI();
-          this.audio.playUI('click');
+          this.audio.playUI('select');
         };
         priContainer.appendChild(div);
       });
     }
 
-    // Secondary weapon options
+    // 2. Secondary Ordnance & Ammo
     const secContainer = document.getElementById('armory-sec-list');
     if (secContainer) {
       secContainer.innerHTML = '';
       ['grenade', 'missile', 'mine'].forEach(id => {
         const item = WEAPON_REGISTRY[id];
+        const isEquipped = (loadout.secondaryWeapon === id);
+        const currentAmmo = loadout.ammo[id] || 0;
         const div = document.createElement('div');
-        div.className = `item-option ${loadout.secondaryWeapon === id ? 'active' : ''}`;
-        div.innerHTML = `<div><strong>${item.name}</strong> (${loadout.ammo[id] || 0})<br><small>${item.desc}</small></div>`;
-        div.onclick = () => {
+        div.className = `item-option ${isEquipped ? 'active' : ''}`;
+        div.innerHTML = `
+          <div style="flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="color: ${isEquipped ? 'var(--term-amber)' : '#e0eef7'};">${item.name}</strong>
+              <span style="font-size: 10px; color: ${isEquipped ? 'var(--term-amber)' : '#6f8fa4'}; font-weight: bold; border: 1px solid ${isEquipped ? 'var(--term-amber)' : '#345'}; padding: 1px 6px; border-radius: 2px;">
+                ${isEquipped ? 'EQUIPPED' : 'SELECT'}
+              </span>
+            </div>
+            <div style="font-size: 11px; color: #7fa0b8; margin: 4px 0 2px 0;">
+              DMG: ${item.damage} | BLAST: ${item.radius}m | MAX: ${item.maxAmmo}
+            </div>
+            <small style="color: #92a9ba; font-size: 10px; line-height: 1.25; display: block; margin-bottom: 6px;">${item.desc}</small>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #060e16; padding: 4px 8px; border: 1px solid #162a3d; border-radius: 2px;">
+              <span style="font-size: 11px; color: #a0d4e6;">ROUNDS: <strong>${currentAmmo} / ${item.maxAmmo}</strong></span>
+              <div style="display: flex; gap: 4px;">
+                <button class="term-btn mini" data-action="dec" style="padding: 2px 8px; font-size: 11px;">-</button>
+                <button class="term-btn mini" data-action="inc" style="padding: 2px 8px; font-size: 11px;">+</button>
+              </div>
+            </div>
+          </div>
+        `;
+        div.onclick = (e) => {
+          if (e.target.dataset && (e.target.dataset.action === 'dec' || e.target.dataset.action === 'inc')) return;
           loadout.setSecondary(id);
+          this.populateArmoryUI();
+          this.audio.playUI('select');
+        };
+        const decBtn = div.querySelector('[data-action="dec"]');
+        const incBtn = div.querySelector('[data-action="inc"]');
+        if (decBtn) {
+          decBtn.onclick = (e) => {
+            e.stopPropagation();
+            loadout.ammo[id] = Math.max(0, (loadout.ammo[id] || 0) - 1);
+            this.populateArmoryUI();
+            this.audio.playUI('click');
+          };
+        }
+        if (incBtn) {
+          incBtn.onclick = (e) => {
+            e.stopPropagation();
+            loadout.ammo[id] = Math.min(item.maxAmmo, (loadout.ammo[id] || 0) + 1);
+            this.populateArmoryUI();
+            this.audio.playUI('click');
+          };
+        }
+        secContainer.appendChild(div);
+      });
+    }
+
+    // 3. Suit Hardware & Inventory
+    const gearContainer = document.getElementById('armory-gear-list');
+    if (gearContainer) {
+      gearContainer.innerHTML = '';
+
+      // Autofire Module
+      const autofireDiv = document.createElement('div');
+      autofireDiv.className = `item-option ${loadout.hasAutofire ? 'active' : ''}`;
+      autofireDiv.innerHTML = `
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong style="color: ${loadout.hasAutofire ? 'var(--term-cyan)' : '#e0eef7'};">Neurolink Autofire</strong>
+            <span style="font-size: 10px; color: ${loadout.hasAutofire ? 'var(--term-cyan)' : '#6f8fa4'}; font-weight: bold; border: 1px solid ${loadout.hasAutofire ? 'var(--term-cyan)' : '#345'}; padding: 1px 6px; border-radius: 2px;">
+              ${loadout.hasAutofire ? 'ACTIVE' : 'OFF'}
+            </span>
+          </div>
+          <small style="color: #92a9ba; font-size: 10px; line-height: 1.25; display: block; margin-top: 3px;">
+            Neural sync allowing continuous automatic PPC fire while trigger is depressed.
+          </small>
+        </div>
+      `;
+      autofireDiv.onclick = () => {
+        loadout.hasAutofire = !loadout.hasAutofire;
+        this.populateArmoryUI();
+        this.audio.playUI('click');
+      };
+      gearContainer.appendChild(autofireDiv);
+
+      // Armor Plates
+      const platesCount = loadout.armorPlatesCount || 0;
+      const platesDiv = document.createElement('div');
+      platesDiv.className = `item-option ${platesCount > 0 ? 'active' : ''}`;
+      platesDiv.innerHTML = `
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong style="color: ${platesCount > 0 ? 'var(--term-cyan)' : '#e0eef7'};">Boron-Carbide Armor</strong>
+            <span style="font-size: 10px; color: #a0d4e6; font-weight: bold;">
+              +${platesCount * 40} ARMOR
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; background: #060e16; padding: 4px 8px; border: 1px solid #162a3d; border-radius: 2px; margin-top: 6px;">
+            <span style="font-size: 11px; color: #a0d4e6;">PLATES: <strong>${platesCount} / 5</strong></span>
+            <div style="display: flex; gap: 4px;">
+              <button class="term-btn mini" data-action="dec">-</button>
+              <button class="term-btn mini" data-action="inc">+</button>
+            </div>
+          </div>
+        </div>
+      `;
+      const decPlate = platesDiv.querySelector('[data-action="dec"]');
+      const incPlate = platesDiv.querySelector('[data-action="inc"]');
+      if (decPlate) {
+        decPlate.onclick = (e) => {
+          e.stopPropagation();
+          loadout.armorPlatesCount = Math.max(0, (loadout.armorPlatesCount || 0) - 1);
           this.populateArmoryUI();
           this.audio.playUI('click');
         };
-        secContainer.appendChild(div);
+      }
+      if (incPlate) {
+        incPlate.onclick = (e) => {
+          e.stopPropagation();
+          loadout.armorPlatesCount = Math.min(5, (loadout.armorPlatesCount || 0) + 1);
+          this.populateArmoryUI();
+          this.audio.playUI('click');
+        };
+      }
+      gearContainer.appendChild(platesDiv);
+
+      // Medpack Counter in Inventory
+      let medCount = 0;
+      loadout.inventory.forEach(s => { if (s && s.id === 'medpack') medCount += (s.count || 1); });
+      const medDiv = document.createElement('div');
+      medDiv.className = `item-option ${medCount > 0 ? 'active' : ''}`;
+      medDiv.innerHTML = `
+        <div style="flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong style="color: ${medCount > 0 ? 'var(--term-cyan)' : '#e0eef7'};">Autodoc Medpacks</strong>
+            <span style="font-size: 10px; color: #a0d4e6; font-weight: bold;">
+              SLOTS 1-5
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; background: #060e16; padding: 4px 8px; border: 1px solid #162a3d; border-radius: 2px; margin-top: 6px;">
+            <span style="font-size: 11px; color: #a0d4e6;">MEDPACKS: <strong>${medCount} / 4</strong></span>
+            <div style="display: flex; gap: 4px;">
+              <button class="term-btn mini" data-action="dec">-</button>
+              <button class="term-btn mini" data-action="inc">+</button>
+            </div>
+          </div>
+        </div>
+      `;
+      const decMed = medDiv.querySelector('[data-action="dec"]');
+      const incMed = medDiv.querySelector('[data-action="inc"]');
+      if (decMed) {
+        decMed.onclick = (e) => {
+          e.stopPropagation();
+          loadout.removeItem('medpack', 1);
+          this.populateArmoryUI();
+          this.audio.playUI('click');
+        };
+      }
+      if (incMed) {
+        incMed.onclick = (e) => {
+          e.stopPropagation();
+          if (medCount < 4) {
+            loadout.addItemToFirstEmptySlot('medpack', 1);
+          }
+          this.populateArmoryUI();
+          this.audio.playUI('click');
+        };
+      }
+      gearContainer.appendChild(medDiv);
+
+      // Mission Special Items Display
+      const specialItems = [];
+      loadout.inventory.forEach(s => {
+        if (s && s.id !== 'medpack' && s.id !== 'mine') {
+          specialItems.push(WEAPON_REGISTRY[s.id] ? WEAPON_REGISTRY[s.id].name : s.id);
+        }
       });
+      if (specialItems.length > 0) {
+        const specDiv = document.createElement('div');
+        specDiv.className = 'item-option';
+        specDiv.innerHTML = `
+          <div>
+            <strong style="color: var(--term-amber); font-size: 11px;">MISSION EQUIPMENT:</strong><br>
+            <span style="font-size: 10px; color: #bde;">${specialItems.join(', ')}</span>
+          </div>
+        `;
+        gearContainer.appendChild(specDiv);
+      }
     }
   }
 
@@ -590,7 +823,7 @@ class GameEngine {
       `;
 
       const btn = row.querySelector('.key-bind-btn');
-      btn.onclick = () => this.startKeyRebind(act.id, btn);
+      if (btn) btn.onclick = () => this.startKeyRebind(act.id, btn);
 
       list.appendChild(row);
     });
@@ -640,6 +873,11 @@ class GameEngine {
     this.currentMission.timeRemaining = this.currentMission.timeLimit;
     this.state = 'PLAYING';
 
+    if (this.lastMissionLoadoutPresetId !== missionId) {
+      this.player.loadout.applyMissionPreset(missionId);
+      this.lastMissionLoadoutPresetId = missionId;
+    }
+
     this.hideModals();
     this.audio.playTrack('combat');
 
@@ -679,6 +917,11 @@ class GameEngine {
 
     // Attach weapon viewmodel to camera
     this.updateWeaponViewModel();
+
+    // Ensure skyline visibility matches mission environment
+    if (this.skylineBackdrop) {
+      this.skylineBackdrop.visible = (this.currentMission.environment !== 'bunker' && this.currentMission.environment !== 'core' && this.currentMission.environment !== 'vault');
+    }
   }
 
   updateWeaponViewModel() {
@@ -728,16 +971,17 @@ class GameEngine {
     this.scene.add(this.yawObject);
 
     // Ground Plane with textured road and pavement
-    const groundGeo = new THREE.PlaneGeometry(600, 600);
+    const groundGeo = new THREE.PlaneGeometry(800, 800);
     groundGeo.rotateX(-Math.PI / 2);
-    const groundMat = (mission.environment === 'bunker' || mission.environment === 'core')
-      ? ModelFactory.materials.bunkerFloor
+    const groundMat = (mission.environment === 'bunker' || mission.environment === 'core' || mission.environment === 'vault')
+      ? (ModelFactory.materials.bunkerFloor || ModelFactory.materials.concrete)
       : ModelFactory.materials.concrete;
     const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.position.set(250, 0, 250);
     this.scene.add(ground);
 
     // Boundary walls around sector
-    this.buildPerimeterWalls(240, 240);
+    this.buildPerimeterWalls(500, 520);
 
     // Build specific mission geometry & objectives
     if (mission.id === 'training') {
@@ -825,6 +1069,93 @@ class GameEngine {
     this.colliders.push({ box: new THREE.Box3().setFromObject(eastWall) });
   }
 
+  transitionPlayerToArea(coord, targetYaw = 0, message = 'Sector transition complete.', isInterior = false) {
+    this.audio.playElevator();
+
+    this.player.position.set(coord.x * 2, 0, coord.y * 2);
+    this.yawObject.position.copy(this.player.position);
+    this.yawObject.position.y = this.player.height;
+    this.yawObject.rotation.y = targetYaw;
+    this.pitchObject.rotation.x = 0;
+    this.player.velocity.set(0, 0, 0);
+
+    if (isInterior) {
+      if (this.skylineBackdrop) this.skylineBackdrop.visible = false;
+      this.renderer.setClearColor(0x070b10);
+      this.scene.fog = new THREE.FogExp2(0x091420, 0.009);
+    } else {
+      if (this.skylineBackdrop) this.skylineBackdrop.visible = true;
+      this.renderer.setClearColor(0x121c29);
+      this.scene.fog = new THREE.FogExp2(0x142132, 0.0035);
+    }
+
+    if (message) {
+      this.hud.addCommMessage('SUIT AI', message, 'success');
+    }
+  }
+
+  buildBunkerRoom({ minX, maxX, minZ, maxZ, wallHeight = 8, wallMat, floorMat, ceilingLight = true }) {
+    const minWx = minX * 2;
+    const maxWx = maxX * 2;
+    const minWz = minZ * 2;
+    const maxWz = maxZ * 2;
+    const width = maxWx - minWx;
+    const depth = maxWz - minWz;
+    const cx = (minWx + maxWx) / 2;
+    const cz = (minWz + maxWz) / 2;
+
+    const wallMaterial = wallMat || ModelFactory.materials.darkMetal;
+    const floorMaterial = floorMat || ModelFactory.materials.concrete;
+
+    // Floor
+    const floorGeo = new THREE.PlaneGeometry(width, depth);
+    floorGeo.rotateX(-Math.PI / 2);
+    const floor = new THREE.Mesh(floorGeo, floorMaterial);
+    floor.position.set(cx, 0.05, cz);
+    this.scene.add(floor);
+
+    // Ceiling
+    const ceilGeo = new THREE.PlaneGeometry(width, depth);
+    ceilGeo.rotateX(Math.PI / 2);
+    const ceil = new THREE.Mesh(ceilGeo, wallMaterial);
+    ceil.position.set(cx, wallHeight, cz);
+    this.scene.add(ceil);
+
+    // 4 Walls with Box3 colliders
+    const wallThick = 2.0;
+
+    // North wall (min Z)
+    const nWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
+    nWall.position.set(cx, wallHeight / 2, minWz - wallThick / 2);
+    this.scene.add(nWall);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(nWall) });
+
+    // South wall (max Z)
+    const sWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
+    sWall.position.set(cx, wallHeight / 2, maxWz + wallThick / 2);
+    this.scene.add(sWall);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(sWall) });
+
+    // West wall (min X)
+    const wWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, wallHeight, depth + wallThick * 2), wallMaterial);
+    wWall.position.set(minWx - wallThick / 2, wallHeight / 2, cz);
+    this.scene.add(wWall);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(wWall) });
+
+    // East wall (max X)
+    const eWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, wallHeight, depth + wallThick * 2), wallMaterial);
+    eWall.position.set(maxWx + wallThick / 2, wallHeight / 2, cz);
+    this.scene.add(eWall);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(eWall) });
+
+    // Interior point light
+    if (ceilingLight) {
+      const light = new THREE.PointLight(0x00e5ff, 1.4, 60);
+      light.position.set(cx, wallHeight - 1.5, cz);
+      this.scene.add(light);
+    }
+  }
+
   // MISSION 1: Relay Station [15, 16], Underground Lab [25, 48], Telemetry [82, 64]
   buildMission1Sector() {
     // Ruined buildings
@@ -881,7 +1212,7 @@ class GameEngine {
       }
     });
 
-    // 2. Underground Lab Entrance at [25, 48] - Objective: enter_lab
+    // 2. Underground Lab Entrance at [25, 48] on Surface - Objective: enter_lab
     const labDoor = ModelFactory.createBlastDoor('LAB');
     labDoor.position.set(25 * 2, 0, 48 * 2);
     this.scene.add(labDoor);
@@ -892,26 +1223,44 @@ class GameEngine {
       prompt: '[E] ENTER UNDERGROUND LAB [25, 48]',
       onInteract: () => {
         this.completeObjective('enter_lab');
-        this.hud.addCommMessage('SUIT AI', 'Access granted to Underground Research Facility. Proceed to Telemetry [82, 64].', 'success');
-        this.audio.playElevator();
+        this.transitionPlayerToArea(
+          { x: 80, y: 53 },
+          0,
+          'Access granted. Entering Subterranean Research Facility.',
+          true
+        );
       }
     });
 
-    this.missionTriggers.push({
-      type: 'area',
-      mesh: labDoor,
-      radius: 8.0,
-      onEnter: () => {
-        const obj = this.currentMission.objectives.find(o => o.id === 'enter_lab');
-        if (obj && !obj.done) {
-          this.completeObjective('enter_lab');
-          this.hud.addCommMessage('SUIT AI', 'Underground Laboratory breached. Proceed to Telemetry [82, 64].', 'success');
-          this.audio.playElevator();
-        }
+    // Build Subterranean Lab Complex around [82, 64]
+    this.buildBunkerRoom({
+      minX: 74,
+      maxX: 90,
+      minZ: 50,
+      maxZ: 76,
+      wallHeight: 8
+    });
+
+    // Subterranean Lab Exit Elevator back to Surface at [80, 51]
+    const labExit = ModelFactory.createBlastDoor('SURFACE');
+    labExit.position.set(80 * 2, 0, 51 * 2);
+    this.scene.add(labExit);
+    this.interactiveObjects.push({
+      mesh: labExit,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR UP TO SURFACE RUINS',
+      onInteract: () => {
+        this.transitionPlayerToArea(
+          { x: 25, y: 46 },
+          Math.PI,
+          'Ascending to Surface Ruins. Evacuate to Extraction [25, 2]!',
+          false
+        );
       }
     });
 
-    // 3. Telemetry Data at [82, 64] - Objective: get_telemetry
+    // 3. Telemetry Data at [82, 64] inside the underground lab - Objective: get_telemetry
     const telemetry = ModelFactory.createCommGrid();
     telemetry.position.set(82 * 2, 0, 64 * 2);
     this.scene.add(telemetry);
@@ -922,31 +1271,21 @@ class GameEngine {
       prompt: '[E] DOWNLOAD TELEMETRY DATA [82, 64]',
       onInteract: () => {
         this.completeObjective('get_telemetry');
-        this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Evacuate immediately to extraction point at [25, 2]!', 'success');
+        this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Take the elevator at [80, 51] to the surface and extract at [25, 2]!', 'success');
         this.audio.playItemPickup();
       }
     });
 
-    this.missionTriggers.push({
-      type: 'area',
-      mesh: telemetry,
-      radius: 6.0,
-      onEnter: () => {
-        const obj = this.currentMission.objectives.find(o => o.id === 'get_telemetry');
-        if (obj && !obj.done) {
-          this.completeObjective('get_telemetry');
-          this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Evacuate immediately to extraction point at [25, 2]!', 'success');
-          this.audio.playItemPickup();
-        }
-      }
-    });
-
-    // Spawn Enemy Patrols
+    // Spawn Enemy Patrols (Surface + Subterranean Lab Garrison)
     this.spawnEnemy('t800', 16 * 2, 19 * 2);
     this.spawnEnemy('t800', 28 * 2, 45 * 2);
     this.spawnEnemy('g500', 50 * 2, 40 * 2);
-    this.spawnEnemy('spider', 75 * 2, 60 * 2);
-    this.spawnEnemy('hk_aerial', 60 * 2, 50 * 2);
+    this.spawnEnemy('spider', 22 * 2, 28 * 2);
+    this.spawnEnemy('hk_aerial', 25 * 2, 35 * 2);
+
+    // Underground Lab interior guards
+    this.spawnEnemy('turret', 85 * 2, 60 * 2);
+    this.spawnEnemy('t800', 82 * 2, 70 * 2);
   }
 
   // MISSION 2: Relay Tower 1 [6, 109], Comm Grid [25, 111], Relay Tower 2 [44, 108]
@@ -1041,35 +1380,116 @@ class GameEngine {
       }
     });
 
-    // Underground Entrance [16, 47]
+    // Underground Entrance [16, 47] on Surface
     const entrance = ModelFactory.createBlastDoor('SEC-9');
     entrance.position.set(16 * 2, 0, 47 * 2);
     this.scene.add(entrance);
     this.interactiveObjects.push({
       mesh: entrance,
       type: 'door',
+      interactDist: 7.0,
       prompt: '[E] INFILTRATE RESEARCH SUB-LEVEL',
       onInteract: () => {
         this.completeObjective('enter_complex');
-        this.audio.playElevator();
-        this.hud.addCommMessage('SUIT AI', 'Descent to Sub-Level 1 initiated.', 'normal');
+        this.transitionPlayerToArea({ x: 16, y: 108 }, 0, 'Descent to Sub-Level 1 initiated.', true);
       }
     });
 
-    // Time Distortion Device at [81, 25]
+    // Sub-Level 1 Room [10..22, 104..116]
+    this.buildBunkerRoom({ minX: 10, maxX: 22, minZ: 104, maxZ: 116, wallHeight: 8 });
+
+    // Exit elevator back to surface at [16, 106]
+    const exitL1 = ModelFactory.createBlastDoor('SURFACE');
+    exitL1.position.set(16 * 2, 0, 106 * 2);
+    this.scene.add(exitL1);
+    this.interactiveObjects.push({
+      mesh: exitL1,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] ASCEND TO SURFACE RUINS',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 16, y: 45 }, Math.PI, 'Ascending to Surface Ruins.', false);
+      }
+    });
+
+    // Level 2 Elevator at [16, 110]
+    const elevL2 = ModelFactory.createBlastDoor('LEVEL-2');
+    elevL2.position.set(16 * 2, 0, 110 * 2);
+    this.scene.add(elevL2);
+    this.interactiveObjects.push({
+      mesh: elevL2,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR DOWN TO SUB-LEVEL 2',
+      onInteract: () => {
+        this.completeObjective('elevator_l2');
+        this.transitionPlayerToArea({ x: 108, y: 65 }, 0, 'Descending to Sub-Level 2...', true);
+      }
+    });
+
+    // Sub-Level 2 Room [102..114, 60..74]
+    this.buildBunkerRoom({ minX: 102, maxX: 114, minZ: 60, maxZ: 74, wallHeight: 8 });
+
+    // Elevator back up to Level 1 at [108, 63]
+    const elevUpL1 = ModelFactory.createBlastDoor('LEVEL-1');
+    elevUpL1.position.set(108 * 2, 0, 63 * 2);
+    this.scene.add(elevUpL1);
+    this.interactiveObjects.push({
+      mesh: elevUpL1,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR UP TO SUB-LEVEL 1',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 16, y: 108 }, 0, 'Ascending to Sub-Level 1.', true);
+      }
+    });
+
+    // Level 3 Elevator at [108, 67]
+    const elevL3 = ModelFactory.createBlastDoor('LEVEL-3');
+    elevL3.position.set(108 * 2, 0, 67 * 2);
+    this.scene.add(elevL3);
+    this.interactiveObjects.push({
+      mesh: elevL3,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR DOWN TO LEVEL 3 (TEMPORAL VAULT)',
+      onInteract: () => {
+        this.completeObjective('elevator_l3');
+        this.transitionPlayerToArea({ x: 81, y: 22 }, 0, 'Entering Sub-Level 3: Temporal Vault...', true);
+      }
+    });
+
+    // Sub-Level 3 Room (Temporal Vault) [74..88, 18..32]
+    this.buildBunkerRoom({ minX: 74, maxX: 88, minZ: 18, maxZ: 32, wallHeight: 8 });
+
+    // Elevator back up to Level 2 at [81, 20]
+    const elevUpL2 = ModelFactory.createBlastDoor('LEVEL-2');
+    elevUpL2.position.set(81 * 2, 0, 20 * 2);
+    this.scene.add(elevUpL2);
+    this.interactiveObjects.push({
+      mesh: elevUpL2,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR UP TO SUB-LEVEL 2',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 108, y: 65 }, 0, 'Ascending to Sub-Level 2.', true);
+      }
+    });
+
+    // Time Distortion Device at [81, 25] inside Level 3
     const device = ModelFactory.createTimeDistortionDevice();
     device.position.set(81 * 2, 0, 25 * 2);
     this.scene.add(device);
     this.interactiveObjects.push({
       mesh: device,
       type: 'device',
+      interactDist: 7.0,
       prompt: '[E] SCAN & SECURE TIME DISTORTION DEVICE',
       onInteract: () => {
         this.completeObjective('secure_device');
-        this.completeObjective('elevator_l2');
-        this.completeObjective('elevator_l3');
         this.hud.addCommMessage('JOHN CONNOR', 'Time Distortion Device secured! Chronal telemetry logged! Mission Accomplished!', 'success');
         this.audio.playItemPickup();
+        setTimeout(() => this.missionVictory(), 1500);
       }
     });
 
@@ -1112,11 +1532,28 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: bunker,
       type: 'door',
-      prompt: '[E] ENTER OVERRIDE CODE: 38473-ENABLE',
+      interactDist: 7.0,
+      prompt: '[E] ENTER OVERRIDE CODE: 38473-ENABLE & ENTER VAULT',
       onInteract: () => {
         this.completeObjective('underground_code');
-        this.hud.addCommMessage('SUIT AI', 'Code Accepted: 38473-ENABLE. Perimeter barrier deactivated.', 'success');
-        this.audio.playElevator();
+        this.transitionPlayerToArea({ x: 12, y: 160 }, 0, 'Code Accepted: 38473-ENABLE. Entering Defense Network Core Vault...', true);
+      }
+    });
+
+    // Subterranean Defense Vault [4..22, 154..176]
+    this.buildBunkerRoom({ minX: 4, maxX: 22, minZ: 154, maxZ: 176, wallHeight: 8 });
+
+    // Return Door to Perimeter Trench at [12, 158]
+    const vaultExit = ModelFactory.createBlastDoor('SURFACE');
+    vaultExit.position.set(12 * 2, 0, 158 * 2);
+    this.scene.add(vaultExit);
+    this.interactiveObjects.push({
+      mesh: vaultExit,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] EXIT TO PERIMETER TRENCH',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 25, y: 109 }, Math.PI, 'Exiting to Perimeter Trench.', false);
       }
     });
 
@@ -1127,6 +1564,7 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: core,
       type: 'demolish',
+      interactDist: 7.0,
       prompt: '[E] DEMOLISH DEFENSE NETWORK CORE WITH MINE',
       onInteract: () => {
         if (this.player.loadout.hasItem('mine')) {
@@ -1134,9 +1572,33 @@ class GameEngine {
           this.completeObjective('destroy_defense');
           this.createExplosion(core.position, 3.0);
           this.scene.remove(core);
-          this.hud.addCommMessage('JOHN CONNOR', 'Defense Network destroyed! Sprint to elevator [25, 140]!', 'success');
+          this.hud.addCommMessage('JOHN CONNOR', 'Defense Network destroyed! Sprint to elevator [20, 168]!', 'success');
         } else {
-          this.hud.addCommMessage('SUIT AI', 'ERROR: Proximity Mine required!', 'warn');
+          this.player.heat = Math.min(100, this.player.heat + 50);
+          this.completeObjective('destroy_defense');
+          this.createExplosion(core.position, 3.0);
+          this.scene.remove(core);
+          this.hud.addCommMessage('JOHN CONNOR', 'Defense Network overloaded via PPC! Sprint to elevator [20, 168]!', 'success');
+        }
+      }
+    });
+
+    // Extraction Elevator at [20, 168]
+    const escapeElevator = ModelFactory.createBlastDoor('ESCAPE');
+    escapeElevator.position.set(20 * 2, 0, 168 * 2);
+    this.scene.add(escapeElevator);
+    this.interactiveObjects.push({
+      mesh: escapeElevator,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] ESCAPE VIA EXTRACTION ELEVATOR [25, 140]',
+      onInteract: () => {
+        const destObj = this.currentMission.objectives.find(o => o.id === 'destroy_defense');
+        if (destObj && destObj.done) {
+          this.completeObjective('extract_elevator');
+          this.missionVictory();
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'LOCKED: Demolish Defense Network Core first!', 'warn');
         }
       }
     });
@@ -1149,18 +1611,67 @@ class GameEngine {
 
   // MISSION 5: Rescue Major Altorrez at [27, 85] (10-minute timer)
   buildMission5Sector() {
-    // Comm Base Gamma Entrance [111, 48]
+    // Comm Base Gamma Entrance [111, 48] on Surface
     const entrance = ModelFactory.createBlastDoor('GAMMA');
     entrance.position.set(111 * 2, 0, 48 * 2);
     this.scene.add(entrance);
     this.interactiveObjects.push({
       mesh: entrance,
       type: 'door',
-      prompt: '[E] BREACH COMM BASE GAMMA',
+      interactDist: 7.0,
+      prompt: '[E] BREACH COMM BASE GAMMA & DESCEND',
       onInteract: () => {
         this.completeObjective('enter_gamma');
+        this.transitionPlayerToArea({ x: 48, y: 46 }, 0, 'Entering Comm Base Gamma Sub-Level 1...', true);
+      }
+    });
+
+    // Sub-Level 1 Room [42..54, 42..52]
+    this.buildBunkerRoom({ minX: 42, maxX: 54, minZ: 42, maxZ: 52, wallHeight: 8 });
+
+    // Exit back to surface at [48, 44]
+    const exitL1 = ModelFactory.createBlastDoor('SURFACE');
+    exitL1.position.set(48 * 2, 0, 44 * 2);
+    this.scene.add(exitL1);
+    this.interactiveObjects.push({
+      mesh: exitL1,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] ASCEND TO SURFACE RUINS',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 111, y: 46 }, Math.PI, 'Ascending to Surface.', false);
+      }
+    });
+
+    // Descent elevator at [48, 48]
+    const elevDown = ModelFactory.createBlastDoor('LEVEL-2');
+    elevDown.position.set(48 * 2, 0, 48 * 2);
+    this.scene.add(elevDown);
+    this.interactiveObjects.push({
+      mesh: elevDown,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR DOWN TO LEVEL 2 [48, 48]',
+      onInteract: () => {
         this.completeObjective('elevator_down');
-        this.hud.addCommMessage('SUIT AI', 'Entered Gamma Sub-Level. Major Altorrez vitals detected at [27, 85].', 'warn');
+        this.transitionPlayerToArea({ x: 35, y: 75 }, 0, 'Descending to Gamma Sub-Level 2... Major Altorrez vitals detected at [27, 85]!', true);
+      }
+    });
+
+    // Level 2 Subterranean Chamber [20..42, 70..92]
+    this.buildBunkerRoom({ minX: 20, maxX: 42, minZ: 70, maxZ: 92, wallHeight: 8 });
+
+    // Return elevator to Level 1 at [35, 73]
+    const elevUpL1 = ModelFactory.createBlastDoor('LEVEL-1');
+    elevUpL1.position.set(35 * 2, 0, 73 * 2);
+    this.scene.add(elevUpL1);
+    this.interactiveObjects.push({
+      mesh: elevUpL1,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ELEVATOR UP TO LEVEL 1',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 48, y: 46 }, 0, 'Ascending to Level 1.', true);
       }
     });
 
@@ -1171,16 +1682,38 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: altorrez,
       type: 'npc',
+      interactDist: 7.0,
       prompt: '[E] ADMINISTER AUTODOC MEDPACK TO MAJOR ALTORREZ',
       onInteract: () => {
         if (this.player.loadout.hasItem('medpack')) {
           this.player.loadout.removeItem('medpack', 1);
           this.completeObjective('rescue_altorrez');
-          this.completeObjective('elevator_up');
-          this.hud.addCommMessage('MAJOR ALTORREZ', '"Thanks soldier... vitals stabilized. Carry me to the surface [64, 1]!"', 'success');
+          this.hud.addCommMessage('MAJOR ALTORREZ', '"Thanks soldier... vitals stabilized. Carry me up the ascent elevator [25, 76]!"', 'success');
           this.audio.playItemPickup();
         } else {
-          this.hud.addCommMessage('SUIT AI', 'ERROR: Autodoc Medpack required in inventory!', 'warn');
+          this.completeObjective('rescue_altorrez');
+          this.hud.addCommMessage('MAJOR ALTORREZ', '"Suit defibrillator applied... stabilized! Carry me up the ascent elevator [25, 76]!"', 'success');
+          this.audio.playItemPickup();
+        }
+      }
+    });
+
+    // Ascent elevator at [25, 76]
+    const elevAscent = ModelFactory.createBlastDoor('SURFACE');
+    elevAscent.position.set(25 * 2, 0, 76 * 2);
+    this.scene.add(elevAscent);
+    this.interactiveObjects.push({
+      mesh: elevAscent,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ASCENT ELEVATOR TO SURFACE WITH MAJOR ALTORREZ',
+      onInteract: () => {
+        const rescued = this.currentMission.objectives.find(o => o.id === 'rescue_altorrez');
+        if (rescued && rescued.done) {
+          this.completeObjective('elevator_up');
+          this.transitionPlayerToArea({ x: 64, y: 12 }, Math.PI, 'Surface reached! Evacuate Major Altorrez to extraction [64, 1]!', false);
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'ERROR: Locate and stabilize Major Altorrez first!', 'warn');
         }
       }
     });
@@ -1237,22 +1770,39 @@ class GameEngine {
       }
     });
 
-    // Gamma Base Entrance [10, 47]
+    // Gamma Base Entrance [10, 47] on Surface
     const baseDoor = ModelFactory.createBlastDoor('GAMMA');
     baseDoor.position.set(10 * 2, 0, 47 * 2);
     this.scene.add(baseDoor);
     this.interactiveObjects.push({
       mesh: baseDoor,
       type: 'door',
-      prompt: '[E] SWIPE GAMMA CARD TO OPEN BLAST DOOR',
+      interactDist: 7.0,
+      prompt: '[E] SWIPE GAMMA CARD TO ENTER VAULT OF CHRONOS',
       onInteract: () => {
         if (this.player.loadout.hasItem('card_gamma')) {
           this.completeObjective('breach_base');
-          this.scene.remove(baseDoor);
-          this.hud.addCommMessage('SUIT AI', 'Gamma clearance accepted. Vault doors open.', 'success');
+          this.transitionPlayerToArea({ x: 69, y: 22 }, 0, 'Gamma clearance accepted. Entering Vault of Chronos...', true);
         } else {
           this.hud.addCommMessage('SUIT AI', 'ACCESS DENIED: Gamma Access Card required in inventory slots 1-5!', 'warn');
         }
+      }
+    });
+
+    // Vault of Chronos Chamber [60..78, 18..44]
+    this.buildBunkerRoom({ minX: 60, maxX: 78, minZ: 18, maxZ: 44, wallHeight: 8 });
+
+    // Return elevator to Surface at [69, 20]
+    const vaultReturn = ModelFactory.createBlastDoor('SURFACE');
+    vaultReturn.position.set(69 * 2, 0, 20 * 2);
+    this.scene.add(vaultReturn);
+    this.interactiveObjects.push({
+      mesh: vaultReturn,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] ASCEND TO SURFACE RUINS',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 10, y: 45 }, Math.PI, 'Ascending to Surface Ruins.', false);
       }
     });
 
@@ -1263,6 +1813,7 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: chronos,
       type: 'demolish',
+      interactDist: 7.0,
       prompt: '[E] DEMOLISH TIME DISTORTION EQUIPMENT WITH MINE',
       onInteract: () => {
         if (this.player.loadout.hasItem('mine')) {
@@ -1270,9 +1821,32 @@ class GameEngine {
           this.completeObjective('destroy_chronos');
           this.createExplosion(chronos.position, 3.5);
           this.scene.remove(chronos);
-          this.hud.addCommMessage('JOHN CONNOR', 'Temporal equipment vaporized! Extract to [25, 0]!', 'success');
+          this.hud.addCommMessage('JOHN CONNOR', 'Temporal equipment vaporized! Take escape elevator [69, 42] to surface!', 'success');
         } else {
-          this.hud.addCommMessage('SUIT AI', 'ERROR: Proximity Mine required!', 'warn');
+          this.player.heat = Math.min(100, this.player.heat + 50);
+          this.completeObjective('destroy_chronos');
+          this.createExplosion(chronos.position, 3.5);
+          this.scene.remove(chronos);
+          this.hud.addCommMessage('JOHN CONNOR', 'Temporal equipment vaporized via PPC! Take escape elevator [69, 42] to surface!', 'success');
+        }
+      }
+    });
+
+    // Escape Elevator at [69, 42]
+    const escapeVault = ModelFactory.createBlastDoor('SURFACE');
+    escapeVault.position.set(69 * 2, 0, 42 * 2);
+    this.scene.add(escapeVault);
+    this.interactiveObjects.push({
+      mesh: escapeVault,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE ESCAPE ELEVATOR TO SURFACE EXTRACTION [25, 0]',
+      onInteract: () => {
+        const chronosObj = this.currentMission.objectives.find(o => o.id === 'destroy_chronos');
+        if (chronosObj && chronosObj.done) {
+          this.transitionPlayerToArea({ x: 25, y: 8 }, Math.PI, 'Surface exit reached! Proceed to extraction [25, 0]!', false);
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'LOCKED: Demolish Time Distortion Equipment first!', 'warn');
         }
       }
     });
@@ -1284,17 +1858,35 @@ class GameEngine {
 
   // MISSION 7: Launch Complex [173, 47], Nexus Controls [142, 82] & [142, 84], Viral-X [141, 83]
   buildMission7Sector() {
-    // Launch Complex Entrance [173, 47]
+    // Launch Complex Entrance [173, 47] on Surface
     const siloGate = ModelFactory.createBlastDoor('SILO');
     siloGate.position.set(173 * 2, 0, 47 * 2);
     this.scene.add(siloGate);
     this.interactiveObjects.push({
       mesh: siloGate,
       type: 'door',
-      prompt: '[E] BREACH LAUNCH COMPLEX',
+      interactDist: 7.0,
+      prompt: '[E] INFILTRATE ICBM LAUNCH SILO',
       onInteract: () => {
         this.completeObjective('enter_launch');
-        this.hud.addCommMessage('SUIT AI', 'Launch Silo penetrated. Nexus Control nodes detected at [142, 82] & [142, 84].', 'warn');
+        this.transitionPlayerToArea({ x: 142, y: 72 }, 0, 'Entering subterranean ICBM Launch Silo...', true);
+      }
+    });
+
+    // Subterranean Launch Silo Chamber [134..150, 68..92]
+    this.buildBunkerRoom({ minX: 134, maxX: 150, minZ: 68, maxZ: 92, wallHeight: 8 });
+
+    // Return Blast Door to Surface at [142, 70]
+    const siloExit = ModelFactory.createBlastDoor('SURFACE');
+    siloExit.position.set(142 * 2, 0, 70 * 2);
+    this.scene.add(siloExit);
+    this.interactiveObjects.push({
+      mesh: siloExit,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] EXIT TO SURFACE PERIMETER',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 173, y: 45 }, Math.PI, 'Exiting to Surface Perimeter.', false);
       }
     });
 
@@ -1404,6 +1996,7 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: alphaDoor,
       type: 'door',
+      interactDist: 7.0,
       prompt: '[E] UNLOCK ALPHA DOOR WITH ALPHA CARD',
       onInteract: () => {
         if (this.player.loadout.hasItem('card_alpha')) {
@@ -1416,6 +2009,38 @@ class GameEngine {
       }
     });
 
+    // Deep Shaft Elevator at [36, 191]
+    const shaftElevator = ModelFactory.createBlastDoor('CORE');
+    shaftElevator.position.set(36 * 2, 0, 191 * 2);
+    this.scene.add(shaftElevator);
+    this.interactiveObjects.push({
+      mesh: shaftElevator,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] DESCEND DEEP SHAFT ELEVATOR TO REACTOR CORE',
+      onInteract: () => {
+        this.completeObjective('reach_reactor');
+        this.transitionPlayerToArea({ x: 120, y: 162 }, 0, 'Descending deep shaft to Skynet Central Reactor Core...', true);
+      }
+    });
+
+    // Reactor Core Subterranean Chamber [110..130, 158..192]
+    this.buildBunkerRoom({ minX: 110, maxX: 130, minZ: 158, maxZ: 192, wallHeight: 9 });
+
+    // Return elevator to citadel at [120, 160]
+    const coreReturn = ModelFactory.createBlastDoor('CITADEL');
+    coreReturn.position.set(120 * 2, 0, 160 * 2);
+    this.scene.add(coreReturn);
+    this.interactiveObjects.push({
+      mesh: coreReturn,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] ASCEND TO MAIN CITADEL',
+      onInteract: () => {
+        this.transitionPlayerToArea({ x: 36, y: 189 }, Math.PI, 'Ascending to Main Citadel.', false);
+      }
+    });
+
     // Skynet Reactor Core at [120, 180]
     const reactor = ModelFactory.createReactorCore();
     reactor.position.set(120 * 2, 0, 180 * 2);
@@ -1423,12 +2048,31 @@ class GameEngine {
     this.interactiveObjects.push({
       mesh: reactor,
       type: 'reactor',
+      interactDist: 7.0,
       prompt: '[E] OVERLOAD SKYNET CENTRAL REACTOR CORE WITH MINES',
       onInteract: () => {
         this.completeObjective('destroy_reactor');
-        this.completeObjective('reach_reactor');
         this.createExplosion(reactor.position, 5.0);
-        this.hud.addCommMessage('JOHN CONNOR', 'REACTOR CRITICAL! RUN TO SHUTTLE BAY [26, 237] BEFORE IMPLOSION!', 'warn');
+        this.hud.addCommMessage('JOHN CONNOR', 'REACTOR CRITICAL! TAKE EVACUATION ELEVATOR [120, 188] TO SHUTTLE BAY!', 'warn');
+      }
+    });
+
+    // Shuttle Bay Evacuation Elevator at [120, 188]
+    const shuttleElevator = ModelFactory.createBlastDoor('SHUTTLE');
+    shuttleElevator.position.set(120 * 2, 0, 188 * 2);
+    this.scene.add(shuttleElevator);
+    this.interactiveObjects.push({
+      mesh: shuttleElevator,
+      type: 'elevator',
+      interactDist: 7.0,
+      prompt: '[E] TAKE EVACUATION ELEVATOR TO SHUTTLE BAY [26, 237]',
+      onInteract: () => {
+        const reactorObj = this.currentMission.objectives.find(o => o.id === 'destroy_reactor');
+        if (reactorObj && reactorObj.done) {
+          this.transitionPlayerToArea({ x: 26, y: 233 }, 0, 'SHUTTLE BAY REACHED! BOARD EXTRACTION SHUTTLE!', false);
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'LOCKED: Overload Skynet Central Reactor first!', 'warn');
+        }
       }
     });
 
@@ -1753,6 +2397,17 @@ class GameEngine {
     loadout.setPrimary(weapons[nextIdx]);
     this.updateWeaponViewModel();
     this.audio.playUI('select');
+    this.hud.addCommMessage('SUIT AI', `Primary weapon: ${WEAPON_REGISTRY[loadout.primaryWeapon].name}`, 'normal');
+  }
+
+  cycleSecondaryWeapon() {
+    const loadout = this.player.loadout;
+    const secondaries = ['grenade', 'missile', 'mine'];
+    const curIdx = secondaries.indexOf(loadout.secondaryWeapon);
+    const nextIdx = (curIdx + 1) % secondaries.length;
+    loadout.setSecondary(secondaries[nextIdx]);
+    this.audio.playUI('select');
+    this.hud.addCommMessage('SUIT AI', `Secondary ordnance: ${WEAPON_REGISTRY[loadout.secondaryWeapon].name} (${loadout.ammo[loadout.secondaryWeapon] || 0} rounds)`, 'normal');
   }
 
   useInventorySlot(slotIdx) {
@@ -1777,19 +2432,38 @@ class GameEngine {
 
   checkInteract() {
     const playerPos = this.yawObject.position;
+    let closestObj = null;
+    let closestDist = Infinity;
+    const tempPos = new THREE.Vector3();
+
     for (let i = 0; i < this.interactiveObjects.length; i++) {
       const obj = this.interactiveObjects[i];
-      if (!obj.mesh) continue;
-      const dx = playerPos.x - obj.mesh.position.x;
-      const dz = playerPos.z - obj.mesh.position.z;
-      const horizDist = Math.hypot(dx, dz);
-      const interactDist = obj.interactDist || 5.5;
-      if (horizDist < interactDist) {
-        if (obj.onInteract) {
-          obj.onInteract();
-          return;
-        }
+      if (!obj || obj.disabled) continue;
+      if (obj.mesh && !obj.mesh.parent && !obj.position) continue;
+
+      let ox = 0, oz = 0;
+      if (obj.position) {
+        ox = obj.position.x;
+        oz = obj.position.z;
+      } else if (obj.mesh) {
+        obj.mesh.getWorldPosition(tempPos);
+        ox = tempPos.x;
+        oz = tempPos.z;
       }
+
+      const dx = playerPos.x - ox;
+      const dz = playerPos.z - oz;
+      const dist = Math.hypot(dx, dz);
+      const maxDist = obj.interactDist || 7.0;
+
+      if (dist < maxDist && dist < closestDist) {
+        closestDist = dist;
+        closestObj = obj;
+      }
+    }
+
+    if (closestObj && closestObj.onInteract) {
+      closestObj.onInteract();
     }
   }
 
@@ -2420,16 +3094,34 @@ class GameEngine {
 
     // 3. Check interaction prompt nearby
     let activePrompt = null;
+    let closestPromptDist = Infinity;
+    const tempPos = new THREE.Vector3();
+
     for (let i = 0; i < this.interactiveObjects.length; i++) {
       const obj = this.interactiveObjects[i];
-      if (!obj.mesh) continue;
-      const dx = playerPos.x - obj.mesh.position.x;
-      const dz = playerPos.z - obj.mesh.position.z;
-      const horizDist = Math.hypot(dx, dz);
-      const interactDist = obj.interactDist || 5.5;
-      if (horizDist < interactDist && obj.prompt) {
-        activePrompt = typeof obj.prompt === 'function' ? obj.prompt() : obj.prompt;
-        break;
+      if (!obj || obj.disabled) continue;
+      if (obj.mesh && !obj.mesh.parent && !obj.position) continue;
+
+      let ox = 0, oz = 0;
+      if (obj.position) {
+        ox = obj.position.x;
+        oz = obj.position.z;
+      } else if (obj.mesh) {
+        obj.mesh.getWorldPosition(tempPos);
+        ox = tempPos.x;
+        oz = tempPos.z;
+      }
+
+      const dx = playerPos.x - ox;
+      const dz = playerPos.z - oz;
+      const dist = Math.hypot(dx, dz);
+      const maxDist = obj.interactDist || 7.0;
+
+      if (dist < maxDist && dist < closestPromptDist) {
+        if (obj.prompt) {
+          closestPromptDist = dist;
+          activePrompt = typeof obj.prompt === 'function' ? obj.prompt() : obj.prompt;
+        }
       }
     }
 

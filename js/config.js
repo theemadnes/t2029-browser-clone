@@ -34,6 +34,7 @@ class ConfigManager {
         interact: 'KeyE',
         useItem: 'KeyF',
         cycleWeapon: 'KeyR',
+        cycleSecondary: 'KeyT',
         inv1: 'Digit1',
         inv2: 'Digit2',
         inv3: 'Digit3',
