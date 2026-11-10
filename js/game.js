@@ -765,11 +765,38 @@ class GameEngine {
     const extraction = ModelFactory.createExtractionPad();
     extraction.position.set(extCoord.x * 2, 0, extCoord.y * 2);
     this.scene.add(extraction);
-    this.missionTriggers.push({
+
+    const extTrigger = {
       type: 'extraction',
       mesh: extraction,
-      radius: 4.5,
+      radius: 6.0,
       coord: extCoord
+    };
+    this.missionTriggers.push(extTrigger);
+
+    this.interactiveObjects.push({
+      mesh: extraction,
+      type: 'extraction',
+      isExtraction: true,
+      interactDist: 6.0,
+      prompt: () => {
+        if (this.arePrimaryObjectivesComplete()) {
+          return '[E] BOARD EXTRACTION TRANSPORT - COMPLETE MISSION';
+        } else {
+          return 'EXTRACTION LOCKED: PRIMARY OBJECTIVES INCOMPLETE';
+        }
+      },
+      onInteract: () => {
+        if (this.arePrimaryObjectivesComplete()) {
+          const extObj = this.currentMission.objectives.find(o => this.isExtractionObjective(o));
+          if (extObj) extObj.done = true;
+          this.missionVictory();
+        } else {
+          const remaining = this.getIncompleteObjectiveSummary();
+          this.hud.addCommMessage('REBEL COMMAND', `EXTRACTION LOCKED: Complete remaining objectives: ${remaining}`, 'warn');
+          this.audio.playAlarm();
+        }
+      }
     });
   }
 
@@ -816,43 +843,106 @@ class GameEngine {
       this.colliders.push({ box: new THREE.Box3().setFromObject(mesh) });
     });
 
-    // Relay Station at [15, 16]
+    // 1. Relay Station at [15, 16] - Objective: protect_relay
     const relay = ModelFactory.createRelayTower();
     relay.position.set(15 * 2, 0, 16 * 2);
     this.scene.add(relay);
 
-    // Underground Lab Entrance at [25, 48]
+    // Interactive console on Relay Station
+    this.interactiveObjects.push({
+      mesh: relay,
+      type: 'relay',
+      interactDist: 7.0,
+      prompt: '[E] SECURE RELAY STATION [15, 16]',
+      onInteract: () => {
+        const obj = this.currentMission.objectives.find(o => o.id === 'protect_relay');
+        if (obj && !obj.done) {
+          this.completeObjective('protect_relay');
+          this.hud.addCommMessage('RELAY AI', 'Forward Relay Station secured! Skynet signals jammed.', 'success');
+          this.hud.addCommMessage('JOHN CONNOR', 'Relay is safe! Now infiltrate Underground Lab at [25, 48].', 'normal');
+        } else {
+          this.hud.addCommMessage('RELAY AI', 'Relay Station online and transmitting telemetry.', 'normal');
+        }
+      }
+    });
+
+    // Proximity trigger around Relay Station [15, 16]
+    this.missionTriggers.push({
+      type: 'area',
+      mesh: relay,
+      radius: 14.0,
+      onEnter: () => {
+        const obj = this.currentMission.objectives.find(o => o.id === 'protect_relay');
+        if (obj && !obj.done) {
+          this.completeObjective('protect_relay');
+          this.hud.addCommMessage('RELAY AI', 'Forward Relay Station secured! Machine assault repelled.', 'success');
+          this.hud.addCommMessage('JOHN CONNOR', 'Relay is safe! Now infiltrate Underground Lab at [25, 48].', 'normal');
+        }
+      }
+    });
+
+    // 2. Underground Lab Entrance at [25, 48] - Objective: enter_lab
     const labDoor = ModelFactory.createBlastDoor('LAB');
     labDoor.position.set(25 * 2, 0, 48 * 2);
     this.scene.add(labDoor);
     this.interactiveObjects.push({
       mesh: labDoor,
       type: 'door',
-      prompt: '[E] ENTER UNDERGROUND LAB',
+      interactDist: 7.0,
+      prompt: '[E] ENTER UNDERGROUND LAB [25, 48]',
       onInteract: () => {
         this.completeObjective('enter_lab');
-        this.hud.addCommMessage('SUIT AI', 'Access granted to Underground Research Facility.', 'success');
+        this.hud.addCommMessage('SUIT AI', 'Access granted to Underground Research Facility. Proceed to Telemetry [82, 64].', 'success');
         this.audio.playElevator();
       }
     });
 
-    // Telemetry Data at [82, 64]
+    this.missionTriggers.push({
+      type: 'area',
+      mesh: labDoor,
+      radius: 8.0,
+      onEnter: () => {
+        const obj = this.currentMission.objectives.find(o => o.id === 'enter_lab');
+        if (obj && !obj.done) {
+          this.completeObjective('enter_lab');
+          this.hud.addCommMessage('SUIT AI', 'Underground Laboratory breached. Proceed to Telemetry [82, 64].', 'success');
+          this.audio.playElevator();
+        }
+      }
+    });
+
+    // 3. Telemetry Data at [82, 64] - Objective: get_telemetry
     const telemetry = ModelFactory.createCommGrid();
     telemetry.position.set(82 * 2, 0, 64 * 2);
     this.scene.add(telemetry);
     this.interactiveObjects.push({
       mesh: telemetry,
       type: 'pickup',
-      prompt: '[E] DOWNLOAD TELEMETRY DATA',
+      interactDist: 6.0,
+      prompt: '[E] DOWNLOAD TELEMETRY DATA [82, 64]',
       onInteract: () => {
         this.completeObjective('get_telemetry');
-        this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Evacuate immediately to extraction!', 'success');
+        this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Evacuate immediately to extraction point at [25, 2]!', 'success');
         this.audio.playItemPickup();
       }
     });
 
+    this.missionTriggers.push({
+      type: 'area',
+      mesh: telemetry,
+      radius: 6.0,
+      onEnter: () => {
+        const obj = this.currentMission.objectives.find(o => o.id === 'get_telemetry');
+        if (obj && !obj.done) {
+          this.completeObjective('get_telemetry');
+          this.hud.addCommMessage('JOHN CONNOR', 'Telemetry data secured! Evacuate immediately to extraction point at [25, 2]!', 'success');
+          this.audio.playItemPickup();
+        }
+      }
+    });
+
     // Spawn Enemy Patrols
-    this.spawnEnemy('t800', 18 * 2, 22 * 2);
+    this.spawnEnemy('t800', 16 * 2, 19 * 2);
     this.spawnEnemy('t800', 28 * 2, 45 * 2);
     this.spawnEnemy('g500', 50 * 2, 40 * 2);
     this.spawnEnemy('spider', 75 * 2, 60 * 2);
@@ -877,7 +967,11 @@ class GameEngine {
           this.scene.remove(tower1);
           this.hud.addCommMessage('REBEL COMMAND', 'Tower 1 demolished! Proceed to central Communications Grid.', 'warn');
         } else {
-          this.hud.addCommMessage('SUIT AI', 'ERROR: Proximity Mine required in inventory!', 'warn');
+          this.player.heat = Math.min(100, this.player.heat + 40);
+          this.completeObjective('tower1');
+          this.createExplosion(tower1.position, 2.0);
+          this.scene.remove(tower1);
+          this.hud.addCommMessage('REBEL COMMAND', 'Tower 1 demolished via PPC overload! Proceed to central Communications Grid.', 'warn');
         }
       }
     });
@@ -914,7 +1008,11 @@ class GameEngine {
           this.scene.remove(tower2);
           this.hud.addCommMessage('JOHN CONNOR', 'Both relay towers destroyed! Get to the extraction point [25, 1]!', 'success');
         } else {
-          this.hud.addCommMessage('SUIT AI', 'ERROR: Proximity Mine required in inventory!', 'warn');
+          this.player.heat = Math.min(100, this.player.heat + 40);
+          this.completeObjective('tower2');
+          this.createExplosion(tower2.position, 2.0);
+          this.scene.remove(tower2);
+          this.hud.addCommMessage('JOHN CONNOR', 'Both relay towers destroyed! Get to the extraction point [25, 1]!', 'success');
         }
       }
     });
@@ -1577,6 +1675,14 @@ class GameEngine {
       birthTime: now,
       fuseTime: 1.5
     });
+
+    if (this.currentMission && this.currentMission.id === 'training') {
+      const expObj = this.currentMission.objectives.find(o => o.id === 'test_explosives');
+      if (expObj && !expObj.done) {
+        this.completeObjective('test_explosives');
+        this.hud.addCommMessage('SUIT AI', 'Explosive ordnance simulation successful.', 'success');
+      }
+    }
   }
 
   launchHomingMissile() {
@@ -1629,6 +1735,14 @@ class GameEngine {
       radius: 8,
       isArmed: true
     });
+
+    if (this.currentMission && this.currentMission.id === 'training') {
+      const expObj = this.currentMission.objectives.find(o => o.id === 'test_explosives');
+      if (expObj && !expObj.done) {
+        this.completeObjective('test_explosives');
+        this.hud.addCommMessage('SUIT AI', 'Explosive ordnance simulation successful.', 'success');
+      }
+    }
   }
 
   cyclePrimaryWeapon() {
@@ -1666,8 +1780,11 @@ class GameEngine {
     for (let i = 0; i < this.interactiveObjects.length; i++) {
       const obj = this.interactiveObjects[i];
       if (!obj.mesh) continue;
-      const dist = playerPos.distanceTo(obj.mesh.position);
-      if (dist < 4.0) {
+      const dx = playerPos.x - obj.mesh.position.x;
+      const dz = playerPos.z - obj.mesh.position.z;
+      const horizDist = Math.hypot(dx, dz);
+      const interactDist = obj.interactDist || 5.5;
+      if (horizDist < interactDist) {
         if (obj.onInteract) {
           obj.onInteract();
           return;
@@ -1842,6 +1959,27 @@ class GameEngine {
     setTimeout(() => this.missionDefeat(), 1800);
   }
 
+  isExtractionObjective(obj) {
+    if (!obj) return false;
+    const id = (obj.id || '').toLowerCase();
+    const txt = (obj.text || '').toLowerCase();
+    return id === 'extract' || id === 'extract_elevator' || id === 'escape_shuttle' ||
+           txt.startsWith('extract') || txt.startsWith('evacuate') || txt.includes('extraction pad');
+  }
+
+  arePrimaryObjectivesComplete() {
+    if (!this.currentMission || !this.currentMission.objectives) return false;
+    const primary = this.currentMission.objectives.filter(o => !this.isExtractionObjective(o));
+    if (primary.length === 0) return true;
+    return primary.every(o => o.done);
+  }
+
+  getIncompleteObjectiveSummary() {
+    if (!this.currentMission || !this.currentMission.objectives) return '';
+    const incomplete = this.currentMission.objectives.filter(o => !this.isExtractionObjective(o) && !o.done);
+    return incomplete.map(o => o.text).join(' | ');
+  }
+
   completeObjective(objId) {
     if (!this.currentMission) return;
     const obj = this.currentMission.objectives.find(o => o.id === objId);
@@ -1981,6 +2119,15 @@ class GameEngine {
       this.player.position.addScaledVector(moveVector, this.player.speed * dt);
       this.yawObject.position.copy(this.player.position);
       this.yawObject.position.y = this.player.height;
+
+      // Training Arena movement calibration check
+      if (this.currentMission && this.currentMission.id === 'training') {
+        const moveObj = this.currentMission.objectives.find(o => o.id === 'move_check');
+        if (moveObj && !moveObj.done) {
+          this.completeObjective('move_check');
+          this.hud.addCommMessage('SUIT AI', 'A.C.E. suit movement controls calibrated.', 'success');
+        }
+      }
     }
 
     // Shield Regeneration (after 4s of not taking damage)
@@ -2227,26 +2374,61 @@ class GameEngine {
       }
     }
 
-    // Check extraction trigger
-    const ext = this.missionTriggers.find(t => t.type === 'extraction');
-    if (ext) {
-      const dist = this.yawObject.position.distanceTo(ext.mesh.position);
-      if (dist < ext.radius) {
-        const allDone = this.currentMission.objectives.every(o => o.done);
-        if (allDone) {
-          this.missionVictory();
+    const now = this.clock.getElapsedTime();
+    const playerPos = this.yawObject.position;
+
+    // 1. Check area proximity triggers
+    if (this.missionTriggers) {
+      for (let i = 0; i < this.missionTriggers.length; i++) {
+        const trig = this.missionTriggers[i];
+        if (trig.type === 'area' && trig.mesh && trig.onEnter) {
+          const dx = playerPos.x - trig.mesh.position.x;
+          const dz = playerPos.z - trig.mesh.position.z;
+          if (Math.hypot(dx, dz) < (trig.radius || 7.0)) {
+            trig.onEnter();
+          }
         }
       }
     }
 
-    // Check interaction prompt nearby
+    // 2. Check extraction trigger
+    const ext = this.missionTriggers ? this.missionTriggers.find(t => t.type === 'extraction') : null;
+    if (ext && ext.mesh) {
+      const dx = playerPos.x - ext.mesh.position.x;
+      const dz = playerPos.z - ext.mesh.position.z;
+      const horizDist = Math.hypot(dx, dz);
+      const isReady = this.arePrimaryObjectivesComplete();
+
+      if (horizDist < (ext.radius || 6.5)) {
+        if (isReady) {
+          // All primary field objectives are done! Evacuate now!
+          const extObj = this.currentMission.objectives.find(o => this.isExtractionObjective(o));
+          if (extObj) extObj.done = true;
+          this.missionVictory();
+          return;
+        } else {
+          // Standing on extraction pad while objectives incomplete: warn periodically
+          if (now - (this.lastExtractWarnTime || 0) > 4.0) {
+            this.lastExtractWarnTime = now;
+            const remaining = this.getIncompleteObjectiveSummary();
+            this.hud.addCommMessage('REBEL COMMAND', `EXTRACTION LOCKED: Complete primary objectives first! Remaining: ${remaining}`, 'warn');
+            this.audio.playAlarm();
+          }
+        }
+      }
+    }
+
+    // 3. Check interaction prompt nearby
     let activePrompt = null;
-    const playerPos = this.yawObject.position;
     for (let i = 0; i < this.interactiveObjects.length; i++) {
       const obj = this.interactiveObjects[i];
       if (!obj.mesh) continue;
-      if (playerPos.distanceTo(obj.mesh.position) < 4.0 && obj.prompt) {
-        activePrompt = obj.prompt;
+      const dx = playerPos.x - obj.mesh.position.x;
+      const dz = playerPos.z - obj.mesh.position.z;
+      const horizDist = Math.hypot(dx, dz);
+      const interactDist = obj.interactDist || 5.5;
+      if (horizDist < interactDist && obj.prompt) {
+        activePrompt = typeof obj.prompt === 'function' ? obj.prompt() : obj.prompt;
         break;
       }
     }
