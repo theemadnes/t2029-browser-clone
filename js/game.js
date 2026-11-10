@@ -567,14 +567,14 @@ class GameEngine {
     list.innerHTML = '';
 
     const actions = [
-      { id: 'forward', label: 'Move Forward' },
-      { id: 'backward', label: 'Move Backward' },
-      { id: 'strafeLeft', label: 'Strafe Left' },
-      { id: 'strafeRight', label: 'Strafe Right' },
-      { id: 'firePrimary', label: 'Fire Primary PPC' },
-      { id: 'fireSecondary', label: 'Fire Secondary' },
-      { id: 'interact', label: 'Interact / Operate' },
-      { id: 'cycleWeapon', label: 'Cycle Weapon' }
+      { id: 'forward', label: 'Move Forward (W)' },
+      { id: 'backward', label: 'Move Backward (S)' },
+      { id: 'strafeLeft', label: 'Lateral Strafe Left (A)' },
+      { id: 'strafeRight', label: 'Lateral Strafe Right (D)' },
+      { id: 'firePrimary', label: 'Fire Primary PPC (L-Click)' },
+      { id: 'fireSecondary', label: 'Fire Secondary (R-Click)' },
+      { id: 'interact', label: 'Interact / Operate (E)' },
+      { id: 'cycleWeapon', label: 'Cycle Weapon (R)' }
     ];
 
     actions.forEach(act => {
@@ -705,26 +705,29 @@ class GameEngine {
     this.interactiveObjects = [];
     this.missionTriggers = [];
 
-    // Apocalyptic Sky Dome
-    const skyGeo = new THREE.SphereGeometry(300, 24, 16);
-    const skyMat = new THREE.MeshBasicMaterial({
-      color: 0x090f19,
-      side: THREE.BackSide
-    });
-    const sky = new THREE.Mesh(skyGeo, skyMat);
-    this.scene.add(sky);
+    // Set clear color and atmospheric fog (bright visibility, not pitch black)
+    this.renderer.setClearColor(0x121c29);
+    this.scene.fog = new THREE.FogExp2(0x142132, 0.0035);
 
-    // Re-add lights and player camera rig
-    const hemiLight = new THREE.HemisphereLight(0x446688, 0x111622, 0.7);
+    // 1992 Authentic Bitmap Skyline Backdrop of Ruined Los Angeles
+    this.skylineBackdrop = ModelFactory.createSkylineBackdrop(280, 160);
+    this.scene.add(this.skylineBackdrop);
+
+    // Bright daylight/twilight post-apocalyptic illumination
+    const hemiLight = new THREE.HemisphereLight(0x99ccff, 0x443a32, 1.35);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xaaccff, 0.85);
-    dirLight.position.set(50, 80, 40);
+    const dirLight = new THREE.DirectionalLight(0xddeeff, 1.25);
+    dirLight.position.set(60, 90, 40);
     this.scene.add(dirLight);
+
+    const fireLight = new THREE.DirectionalLight(0xff6633, 0.65);
+    fireLight.position.set(-60, 30, -50);
+    this.scene.add(fireLight);
 
     this.scene.add(this.yawObject);
 
-    // Ground Plane
+    // Ground Plane with textured road and pavement
     const groundGeo = new THREE.PlaneGeometry(600, 600);
     groundGeo.rotateX(-Math.PI / 2);
     const groundMat = (mission.environment === 'bunker' || mission.environment === 'core')
@@ -1371,8 +1374,8 @@ class GameEngine {
       type: type,
       name: mesh.userData.name || type.replace('_', ' ').toUpperCase(),
       mesh: mesh,
-      radius: mesh.userData.radius || 1.0,
-      height: mesh.userData.height || 2.0,
+      radius: mesh.userData.radius || 1.2,
+      height: mesh.userData.height || 2.2,
       maxHp: mesh.userData.maxHp || 100,
       hp: mesh.userData.maxHp || 100,
       damage: mesh.userData.damage || 15,
@@ -1383,6 +1386,14 @@ class GameEngine {
       lastAttackTime: 0,
       attackCooldown: 1.2
     };
+
+    // Attach enemy reference to root mesh and all child meshes for fast Raycasting hit detection
+    mesh.userData.enemyRef = enemy;
+    mesh.traverse(child => {
+      if (child.isMesh) {
+        child.userData.enemyRef = enemy;
+      }
+    });
 
     this.enemies.push(enemy);
   }
@@ -1413,34 +1424,103 @@ class GameEngine {
       this.hud.addCommMessage('SUIT AI', 'THERMAL LOCKOUT: PPC OVERHEATED!', 'warn');
     }
 
-    // Play synthesized sound
+    // Play synthesized weapon sound
     this.audio[weapon.sound](weapon.soundArg);
 
     // Recoil animation
     this.weaponRecoil = 0.08;
 
-    // Spawn Projectile
-    const spawnPos = this.yawObject.position.clone();
-    spawnPos.y += 0.1; // adjust to eye level
-    const dir = this.player.getForwardVector();
+    // Crosshair Raycaster directly from camera center (0, 0)
+    this.camera.updateMatrixWorld();
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
 
-    const projGeo = new THREE.CylinderGeometry(0.04 * weapon.projScale, 0.04 * weapon.projScale, 1.2 * weapon.projScale, 8);
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+    // Muzzle position for visual bolt origin
+    const muzzlePos = this.yawObject.position.clone();
+    muzzlePos.addScaledVector(right, 0.28);
+    muzzlePos.addScaledVector(forward, 0.45);
+    muzzlePos.y -= 0.15;
+
+    // Muzzle flash particle
+    this.createMuzzleFlash(muzzlePos, weapon.projColor);
+
+    // Collect candidate meshes for raycasting
+    const candidateMeshes = [];
+    const aliveEnemies = this.enemies.filter(e => e.isAlive && e.mesh);
+    aliveEnemies.forEach(e => {
+      candidateMeshes.push(e.mesh);
+    });
+
+    const intersects = raycaster.intersectObjects(candidateMeshes, true);
+    let hitEnemy = null;
+    let targetPoint = null;
+
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      targetPoint = hit.point.clone();
+      let curr = hit.object;
+      while (curr) {
+        if (curr.userData && curr.userData.enemyRef) {
+          hitEnemy = curr.userData.enemyRef;
+          break;
+        }
+        curr = curr.parent;
+      }
+    }
+
+    // A.C.E. Targeting Computer Assist:
+    // If raycast just barely missed by geometry gap but target lock is active:
+    if (!hitEnemy && this.player.lockedTarget && this.player.lockedTarget.isAlive) {
+      const lockEnemy = this.player.lockedTarget;
+      const enemyCenter = lockEnemy.mesh.position.clone();
+      enemyCenter.y += (lockEnemy.height || 2.0) * 0.55;
+      const dirToEnemy = enemyCenter.clone().sub(this.yawObject.position).normalize();
+      const dot = forward.dot(dirToEnemy);
+      if (dot > 0.88) {
+        hitEnemy = lockEnemy;
+        targetPoint = enemyCenter;
+      }
+    }
+
+    // Default target point if no enemy hit
+    if (!targetPoint) {
+      targetPoint = muzzlePos.clone().addScaledVector(raycaster.ray.direction, weapon.range || 160);
+    }
+
+    // High velocity visual plasma bolt
+    const shotDir = targetPoint.clone().sub(muzzlePos).normalize();
+    const boltDist = muzzlePos.distanceTo(targetPoint);
+    const boltSpeed = (weapon.projSpeed || 90) * 1.6;
+    const flightTime = Math.min(boltDist / boltSpeed, 1.2);
+
+    const projGeo = new THREE.CylinderGeometry(0.045 * weapon.projScale, 0.045 * weapon.projScale, 1.4 * weapon.projScale, 8);
     projGeo.rotateX(Math.PI / 2);
-    const projMat = new THREE.MeshBasicMaterial({ color: weapon.projColor });
+    const projMat = new THREE.MeshBasicMaterial({
+      color: weapon.projColor,
+      blending: THREE.AdditiveBlending
+    });
     const projMesh = new THREE.Mesh(projGeo, projMat);
-
-    projMesh.position.copy(spawnPos);
-    projMesh.quaternion.copy(this.camera.quaternion);
+    projMesh.position.copy(muzzlePos);
+    projMesh.lookAt(targetPoint);
     this.scene.add(projMesh);
 
     this.projectiles.push({
       mesh: projMesh,
-      dir: dir,
-      speed: weapon.projSpeed,
+      startPos: muzzlePos.clone(),
+      targetPos: targetPoint.clone(),
+      dir: shotDir,
+      speed: boltSpeed,
       damage: weapon.damage,
       isEnemy: false,
+      hitEnemy: hitEnemy,
+      color: weapon.projColor,
       birthTime: now,
-      life: 2.5
+      flightTime: flightTime,
+      life: flightTime + 0.05
     });
   }
 
@@ -1637,6 +1717,66 @@ class GameEngine {
     }
   }
 
+  createSparks(pos, color = 0x00e5ff, count = 10) {
+    const sparkGeo = new THREE.BufferGeometry();
+    const positions = [];
+    const velocities = [];
+    for (let i = 0; i < count; i++) {
+      positions.push(pos.x, pos.y, pos.z);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      const spd = 3 + Math.random() * 8;
+      velocities.push(
+        Math.sin(phi) * Math.cos(theta) * spd,
+        Math.cos(phi) * spd + 2.5,
+        Math.sin(phi) * Math.sin(theta) * spd
+      );
+    }
+    sparkGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const sparkMat = new THREE.PointsMaterial({
+      color: color,
+      size: 0.22,
+      transparent: true,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending
+    });
+    const pSystem = new THREE.Points(sparkGeo, sparkMat);
+    this.scene.add(pSystem);
+
+    this.particles.push({
+      pSystem: pSystem,
+      velocities: velocities,
+      life: 0.35,
+      maxLife: 0.35,
+      isPointSystem: true
+    });
+  }
+
+  createMuzzleFlash(pos, color = 0x00e5ff) {
+    const flashGeo = new THREE.SphereGeometry(0.12, 6, 6);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending
+    });
+    const flash = new THREE.Mesh(flashGeo, flashMat);
+    flash.position.copy(pos);
+    this.scene.add(flash);
+
+    const light = new THREE.PointLight(color, 2.5, 6);
+    light.position.copy(pos);
+    this.scene.add(light);
+
+    this.particles.push({
+      mesh: flash,
+      light: light,
+      life: 0.08,
+      maxLife: 0.08,
+      growRate: 1.5
+    });
+  }
+
   killEnemy(enemy) {
     enemy.isAlive = false;
     this.scene.remove(enemy.mesh);
@@ -1762,6 +1902,17 @@ class GameEngine {
     const dt = Math.min(this.clock.getDelta(), 0.1);
 
     if (this.state === 'PLAYING') {
+      // Keep 1992 bitmap skyline panorama centered on player and animate atmospheric searchlights
+      if (this.skylineBackdrop) {
+        this.skylineBackdrop.position.set(this.yawObject.position.x, 0, this.yawObject.position.z);
+        const time = this.clock.getElapsedTime();
+        this.skylineBackdrop.children.forEach(child => {
+          if (child.userData && child.userData.initialZ !== undefined) {
+            child.rotation.z = child.userData.initialZ + Math.sin(time * child.userData.speed) * 0.22;
+          }
+        });
+      }
+
       this.updatePlayer(dt);
       this.updateWeapons(dt);
       this.updateEnemies(dt);
@@ -1783,31 +1934,51 @@ class GameEngine {
   updatePlayer(dt) {
     if (!this.player.isAlive) return;
 
-    // Movement Vectors
-    const moveDir = new THREE.Vector3();
     const cfg = this.config;
 
-    if (cfg.isActionPressed('forward', this.keys, this.mouseButtons)) moveDir.z -= 1;
-    if (cfg.isActionPressed('backward', this.keys, this.mouseButtons)) moveDir.z += 1;
-    if (cfg.isActionPressed('strafeLeft', this.keys, this.mouseButtons)) moveDir.x -= 1;
-    if (cfg.isActionPressed('strafeRight', this.keys, this.mouseButtons)) moveDir.x += 1;
+    // Horizontal forward direction on XZ plane
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
 
-    // Classic keyboard turning support
-    if (cfg.settings.controlMode === 'classic') {
-      if (this.keys['ArrowLeft'] || this.keys['KeyQ']) {
-        this.yawObject.rotation.y += cfg.settings.smoothTurnSpeed * dt;
-      }
-      if (this.keys['ArrowRight'] || this.keys['KeyE']) {
-        this.yawObject.rotation.y -= cfg.settings.smoothTurnSpeed * dt;
-      }
+    // Horizontal right lateral vector (orthogonal to forward on XZ plane)
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+    const moveVector = new THREE.Vector3();
+
+    // Forward / Backward movement (W / S)
+    if (cfg.isActionPressed('forward', this.keys, this.mouseButtons) || this.keys['KeyW']) {
+      moveVector.add(forward);
+    }
+    if (cfg.isActionPressed('backward', this.keys, this.mouseButtons) || this.keys['KeyS']) {
+      moveVector.sub(forward);
     }
 
-    if (moveDir.lengthSq() > 0) {
-      moveDir.normalize();
-      // Apply yaw rotation to movement
-      moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yawObject.rotation.y);
+    // STRICT LATERAL MOVEMENT: 'A' and 'D' strafe left and right (NO turning)
+    if (cfg.isActionPressed('strafeLeft', this.keys, this.mouseButtons) || this.keys['KeyA']) {
+      moveVector.sub(right); // Lateral strafe left
+    }
+    if (cfg.isActionPressed('strafeRight', this.keys, this.mouseButtons) || this.keys['KeyD']) {
+      moveVector.add(right); // Lateral strafe right
+    }
 
-      this.player.position.addScaledVector(moveDir, this.player.speed * dt);
+    // Classic Arrow Keys support (Up/Down move, Left/Right turn)
+    if (this.keys['ArrowUp']) moveVector.add(forward);
+    if (this.keys['ArrowDown']) moveVector.sub(forward);
+
+    // Keyboard rotation is ONLY on ArrowLeft/ArrowRight (NOT A or D)
+    if (this.keys['ArrowLeft']) {
+      this.yawObject.rotation.y += cfg.settings.smoothTurnSpeed * dt;
+    }
+    if (this.keys['ArrowRight']) {
+      this.yawObject.rotation.y -= cfg.settings.smoothTurnSpeed * dt;
+    }
+
+    // Apply translation
+    if (moveVector.lengthSq() > 0) {
+      moveVector.normalize();
+      this.player.position.addScaledVector(moveVector, this.player.speed * dt);
       this.yawObject.position.copy(this.player.position);
       this.yawObject.position.y = this.player.height;
     }
@@ -1934,47 +2105,66 @@ class GameEngine {
         }
       } else if (p.isMissile) {
         if (p.target && p.target.isAlive) {
-          const toTarget = p.target.mesh.position.clone().sub(p.mesh.position).normalize();
+          const targetPos = p.target.mesh.position.clone();
+          targetPos.y += (p.target.height || 2.0) * 0.55;
+          const toTarget = targetPos.sub(p.mesh.position).normalize();
           p.dir.lerp(toTarget, 4.5 * dt).normalize();
           p.mesh.lookAt(p.mesh.position.clone().add(p.dir));
         }
         p.mesh.position.addScaledVector(p.dir, p.speed * dt);
 
-        // Check impact
-        if (p.target && p.target.isAlive && p.mesh.position.distanceTo(p.target.mesh.position) < 2.0) {
-          this.createExplosion(p.mesh.position, 1.5);
+        // Check impact against target or enemies
+        let hit = false;
+        for (let j = 0; j < this.enemies.length; j++) {
+          const e = this.enemies[j];
+          if (!e.isAlive) continue;
+          const eCenter = e.mesh.position.clone();
+          eCenter.y += (e.height || 2.0) * 0.55;
+          if (p.mesh.position.distanceTo(eCenter) < (e.radius || 1.2) + 0.6) {
+            this.createExplosion(p.mesh.position, 1.8);
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
           this.scene.remove(p.mesh);
           this.projectiles.splice(i, 1);
+          continue;
+        }
+      } else if (!p.isEnemy && p.targetPos) {
+        // Player Plasma Bolt with direct hit destination
+        p.mesh.position.addScaledVector(p.dir, p.speed * dt);
+
+        const elapsed = now - p.birthTime;
+        if (elapsed >= p.flightTime || p.mesh.position.distanceTo(p.startPos) >= p.startPos.distanceTo(p.targetPos)) {
+          // Impact reached!
+          if (p.hitEnemy && p.hitEnemy.isAlive) {
+            p.hitEnemy.hp -= p.damage;
+            this.audio.playHitArmor();
+            this.createSparks(p.targetPos, p.color, 14);
+            if (p.hitEnemy.hp <= 0) {
+              this.killEnemy(p.hitEnemy);
+              this.hud.addCommMessage('SUIT AI', `${p.hitEnemy.name} DESTROYED`, 'success');
+            }
+          } else {
+            // Hit ground or world obstacle
+            this.createSparks(p.targetPos, p.color, 6);
+          }
+          this.scene.remove(p.mesh);
+          this.projectiles.splice(i, 1);
+          continue;
         }
       } else {
-        // Standard plasma bolt
+        // Enemy plasma bolt
         p.mesh.position.addScaledVector(p.dir, p.speed * dt);
 
         if (p.isEnemy) {
-          // Check hit against player
           if (p.mesh.position.distanceTo(this.yawObject.position) < 1.4) {
             this.damagePlayer(p.damage, p.mesh.position);
+            this.createSparks(p.mesh.position, 0xff2222, 10);
             this.scene.remove(p.mesh);
             this.projectiles.splice(i, 1);
             continue;
-          }
-        } else {
-          // Check hit against enemies
-          let hit = false;
-          for (let j = 0; j < this.enemies.length; j++) {
-            const e = this.enemies[j];
-            if (!e.isAlive) continue;
-            if (p.mesh.position.distanceTo(e.mesh.position) < e.radius + 0.4) {
-              e.hp -= p.damage;
-              hit = true;
-              this.audio.playHitArmor();
-              if (e.hp <= 0) this.killEnemy(e);
-              break;
-            }
-          }
-          if (hit) {
-            this.scene.remove(p.mesh);
-            this.projectiles.splice(i, 1);
           }
         }
       }
@@ -1985,16 +2175,39 @@ class GameEngine {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
       pt.life -= dt;
-      if (pt.mesh) {
-        const s = pt.mesh.scale.x + pt.growRate * dt;
-        pt.mesh.scale.set(s, s, s);
+
+      if (pt.isPointSystem) {
+        const posAttr = pt.pSystem.geometry.attributes.position;
+        const arr = posAttr.array;
+        for (let j = 0; j < pt.velocities.length / 3; j++) {
+          arr[j * 3] += pt.velocities[j * 3] * dt;
+          arr[j * 3 + 1] += (pt.velocities[j * 3 + 1] - 9.8 * dt) * dt;
+          arr[j * 3 + 2] += pt.velocities[j * 3 + 2] * dt;
+        }
+        posAttr.needsUpdate = true;
+        pt.pSystem.material.opacity = Math.max(0, pt.life / pt.maxLife);
+      } else {
+        if (pt.mesh) {
+          const s = pt.mesh.scale.x + (pt.growRate || 0) * dt;
+          pt.mesh.scale.set(s, s, s);
+        }
+        if (pt.light) {
+          pt.light.intensity = Math.max(0, pt.light.intensity - dt * 6);
+        }
       }
-      if (pt.light) {
-        pt.light.intensity = Math.max(0, pt.light.intensity - dt * 6);
-      }
+
       if (pt.life <= 0) {
-        if (pt.mesh) this.scene.remove(pt.mesh);
-        if (pt.light) this.scene.remove(pt.light);
+        if (pt.pSystem) {
+          this.scene.remove(pt.pSystem);
+          pt.pSystem.geometry.dispose();
+          pt.pSystem.material.dispose();
+        }
+        if (pt.mesh) {
+          this.scene.remove(pt.mesh);
+        }
+        if (pt.light) {
+          this.scene.remove(pt.light);
+        }
         this.particles.splice(i, 1);
       }
     }

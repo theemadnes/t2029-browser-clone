@@ -205,18 +205,23 @@ class HUDSystem {
 
   updateTargetLock(player, enemies) {
     let closestEnemy = null;
-    let minDistance = 80; // lock range in meters
+    let minDistance = 140; // lock range in meters
+
+    const eyePos = player.yawObject ? player.yawObject.position : player.position.clone().add(new THREE.Vector3(0, player.height || 1.8, 0));
+    const playerForward = player.getForwardVector ? player.getForwardVector() : new THREE.Vector3(0, 0, -1);
 
     if (enemies && enemies.length > 0) {
       enemies.forEach(enemy => {
-        if (!enemy.isAlive) return;
-        const dist = player.position.distanceTo(enemy.mesh.position);
+        if (!enemy.isAlive || !enemy.mesh) return;
+        const enemyCenter = enemy.mesh.position.clone();
+        enemyCenter.y += (enemy.height || 2.0) * 0.55;
+
+        const dist = eyePos.distanceTo(enemyCenter);
         if (dist < minDistance) {
           // Check if enemy is in forward cone of view
-          const dirToEnemy = enemy.mesh.position.clone().sub(player.position).normalize();
-          const playerForward = player.getForwardVector();
+          const dirToEnemy = enemyCenter.clone().sub(eyePos).normalize();
           const dot = playerForward.dot(dirToEnemy);
-          if (dot > 0.85) { // within ~30 deg forward angle
+          if (dot > 0.88) { // within ~28 deg forward angle
             minDistance = dist;
             closestEnemy = enemy;
           }
@@ -228,7 +233,7 @@ class HUDSystem {
       if (this.dom.reticle) this.dom.reticle.classList.add('locked');
       if (this.dom.targetBox) this.dom.targetBox.classList.add('active');
 
-      const hpPct = Math.round((closestEnemy.hp / closestEnemy.maxHp) * 100);
+      const hpPct = Math.max(0, Math.round((closestEnemy.hp / closestEnemy.maxHp) * 100));
       if (this.dom.targetName) this.dom.targetName.textContent = closestEnemy.name.toUpperCase();
       if (this.dom.targetRange) this.dom.targetRange.textContent = `RANGE: ${Math.round(minDistance)}m`;
       if (this.dom.targetHp) this.dom.targetHp.textContent = `ARMOR: ${hpPct}%`;

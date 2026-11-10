@@ -23,42 +23,105 @@ const ModelFactory = {
   initMaterials() {
     if (this.materials) return;
 
-    // Procedural grid texture for wasteland ground
+    // Procedural textures for 1992 Bethesda Terminator 2029 aesthetics
     let groundTexture = null;
     let hazardTexture = null;
     let wallTexture = null;
+    let buildingTexture = null;
 
     if (typeof document !== 'undefined') {
-      groundTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
-        ctx.fillStyle = '#0f141a';
+      // 1. Post-apocalyptic Ruined Street & Asphalt Texture
+      groundTexture = this.createCanvasTexture(512, 512, (ctx, w, h) => {
+        // Base dark asphalt
+        ctx.fillStyle = '#222830';
         ctx.fillRect(0, 0, w, h);
-        // Distressed asphalt speckles
-        for (let i = 0; i < 400; i++) {
+
+        // Concrete pavement slabs & cracks
+        ctx.strokeStyle = '#181e26';
+        ctx.lineWidth = 3;
+        for (let x = 0; x < w; x += 128) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0); ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+        for (let y = 0; y < h; y += 128) {
+          ctx.beginPath();
+          ctx.moveTo(0, y); ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+
+        // Road striping (distressed yellow and white lane marks)
+        ctx.fillStyle = '#c89e28';
+        for (let y = 20; y < h; y += 64) {
+          ctx.fillRect(60, y, 10, 36);
+          ctx.fillRect(w - 70, y, 10, 36);
+        }
+
+        // Cracks and rubble debris
+        ctx.strokeStyle = '#11161d';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 20; i++) {
+          const cx = Math.random() * w;
+          const cy = Math.random() * h;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 40);
+          ctx.lineTo(cx + (Math.random() - 0.5) * 60, cy + (Math.random() - 0.5) * 60);
+          ctx.stroke();
+        }
+
+        // Asphalt gravel speckles
+        for (let i = 0; i < 600; i++) {
           const x = Math.random() * w;
           const y = Math.random() * h;
-          const r = Math.random() * 2 + 1;
-          ctx.fillStyle = Math.random() > 0.5 ? '#1a222c' : '#080b0f';
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.fillStyle = Math.random() > 0.5 ? '#333b47' : '#141820';
+          ctx.fillRect(x, y, 2, 2);
         }
-        // Cyber grid lines
-        ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(0, 0, w, h);
-        ctx.strokeStyle = 'rgba(0, 229, 255, 0.08)';
-        ctx.beginPath();
-        ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
-        ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
-        ctx.stroke();
       });
-      if (groundTexture) groundTexture.repeat.set(80, 80);
+      if (groundTexture) groundTexture.repeat.set(40, 40);
 
-      // Hazard stripes texture
+      // 2. Ruined Building Facade with shattered window rows
+      buildingTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
+        ctx.fillStyle = '#2d333b';
+        ctx.fillRect(0, 0, w, h);
+
+        // Concrete panels
+        ctx.strokeStyle = '#1a1f26';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(2, 2, w - 4, h - 4);
+
+        // Window grid
+        for (let y = 16; y < h - 16; y += 32) {
+          for (let x = 16; x < w - 16; x += 28) {
+            const rand = Math.random();
+            if (rand > 0.65) {
+              // Intact dark window
+              ctx.fillStyle = '#101620';
+              ctx.fillRect(x, y, 18, 20);
+            } else if (rand > 0.45) {
+              // Shattered / glowing office window
+              ctx.fillStyle = rand > 0.55 ? '#ff9900' : '#00e5ff';
+              ctx.fillRect(x, y, 18, 20);
+            } else {
+              // Blown-out hole with rebar
+              ctx.fillStyle = '#0a0d12';
+              ctx.fillRect(x, y, 18, 20);
+              ctx.strokeStyle = '#555';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(x, y + 10); ctx.lineTo(x + 18, y + 10);
+              ctx.stroke();
+            }
+          }
+        }
+      });
+      if (buildingTexture) buildingTexture.repeat.set(2, 6);
+
+      // 3. Hazard stripes texture
       hazardTexture = this.createCanvasTexture(128, 128, (ctx, w, h) => {
         ctx.fillStyle = '#ffaa00';
         ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = '#111';
+        ctx.fillStyle = '#181818';
         ctx.beginPath();
         for (let i = -w; i < w * 2; i += 32) {
           ctx.moveTo(i, 0);
@@ -70,15 +133,14 @@ const ModelFactory = {
       });
       if (hazardTexture) hazardTexture.repeat.set(4, 1);
 
-      // Bunker wall panels texture
+      // 4. Bunker wall panels texture with rivets
       wallTexture = this.createCanvasTexture(256, 256, (ctx, w, h) => {
-        ctx.fillStyle = '#1c2229';
+        ctx.fillStyle = '#262d36';
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = '#2b343e';
+        ctx.strokeStyle = '#394452';
         ctx.lineWidth = 4;
         ctx.strokeRect(4, 4, w - 8, h - 8);
-        ctx.fillStyle = '#3a4654';
-        // Corner bolts
+        ctx.fillStyle = '#505d6e';
         [16, w - 16].forEach(x => {
           [16, h - 16].forEach(y => {
             ctx.beginPath();
@@ -88,24 +150,142 @@ const ModelFactory = {
         });
       });
       if (wallTexture) wallTexture.repeat.set(4, 2);
+
+      // 5. Authentic 1992 Bitmap Skyline Backdrop of Ruined Los Angeles
+      this.skylineTexture = this.createCanvasTexture(2048, 512, (ctx, w, h) => {
+        // Sky gradient: twilight dark-slate to burning horizon
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0.0, '#0c1626');
+        skyGrad.addColorStop(0.45, '#18273d');
+        skyGrad.addColorStop(0.75, '#481d19');
+        skyGrad.addColorStop(1.0, '#66241a');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Stars in upper night sky
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 350; i++) {
+          const sx = Math.random() * w;
+          const sy = Math.random() * (h * 0.55);
+          const sr = Math.random() * 1.5 + 0.5;
+          ctx.beginPath();
+          ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Skynet Searchlight Beams cutting across the sky
+        const beams = [220, 680, 1150, 1620, 1950];
+        beams.forEach(bx => {
+          ctx.save();
+          const beamGrad = ctx.createLinearGradient(bx, h, bx + 120, 0);
+          beamGrad.addColorStop(0, 'rgba(0, 229, 255, 0.45)');
+          beamGrad.addColorStop(0.65, 'rgba(0, 229, 255, 0.15)');
+          beamGrad.addColorStop(1, 'rgba(0, 229, 255, 0)');
+          ctx.fillStyle = beamGrad;
+          ctx.beginPath();
+          ctx.moveTo(bx - 12, h);
+          ctx.lineTo(bx + 12, h);
+          ctx.lineTo(bx + 160, 0);
+          ctx.lineTo(bx + 70, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Distant burning fires and smoke columns
+        for (let i = 0; i < 9; i++) {
+          const smx = (i * 230) + 70;
+          const smGrad = ctx.createRadialGradient(smx, h - 80, 20, smx, h - 160, 100);
+          smGrad.addColorStop(0, 'rgba(255, 75, 0, 0.5)');
+          smGrad.addColorStop(0.5, 'rgba(70, 25, 20, 0.45)');
+          smGrad.addColorStop(1, 'rgba(20, 10, 15, 0)');
+          ctx.fillStyle = smGrad;
+          ctx.beginPath();
+          ctx.arc(smx, h - 100, 90, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Layer 1: Distant City Skyline Silhouettes
+        ctx.fillStyle = '#121822';
+        let curX = 0;
+        while (curX < w) {
+          const bWidth = 25 + Math.random() * 45;
+          const bHeight = 80 + Math.random() * 180;
+          ctx.fillRect(curX, h - bHeight, bWidth, bHeight);
+
+          if (Math.random() > 0.35) {
+            ctx.fillRect(curX + bWidth / 2 - 1, h - bHeight - 25, 2, 25);
+          }
+          curX += bWidth + (Math.random() * 8 - 4);
+        }
+
+        // Layer 2: Midground Ruined Skyscraper Towers with lit window matrices
+        curX = 10;
+        while (curX < w) {
+          const bWidth = 35 + Math.random() * 65;
+          const bHeight = 130 + Math.random() * 220;
+          ctx.fillStyle = '#1c2533';
+          ctx.fillRect(curX, h - bHeight, bWidth, bHeight);
+
+          // Shattered jagged rooftop
+          ctx.beginPath();
+          ctx.moveTo(curX, h - bHeight);
+          ctx.lineTo(curX + bWidth * 0.45, h - bHeight + (Math.random() * 32 - 16));
+          ctx.lineTo(curX + bWidth, h - bHeight);
+          ctx.lineTo(curX + bWidth, h);
+          ctx.lineTo(curX, h);
+          ctx.fill();
+
+          // Hundreds of illuminated window squares (1992 Bethesda signature look)
+          for (let wy = h - bHeight + 16; wy < h - 20; wy += 14) {
+            for (let wx = curX + 6; wx < curX + bWidth - 6; wx += 10) {
+              const rand = Math.random();
+              if (rand > 0.72) {
+                ctx.fillStyle = rand > 0.9 ? '#00e5ff' : (rand > 0.82 ? '#ffaa00' : '#ff3333');
+                ctx.fillRect(wx, wy, 5, 7);
+                ctx.fillStyle = '#1c2533';
+              }
+            }
+          }
+          curX += bWidth + 10;
+        }
+
+        // Layer 3: Foreground rubble ridge & burning ground glow
+        const glowGrad = ctx.createLinearGradient(0, h - 70, 0, h);
+        glowGrad.addColorStop(0, 'rgba(255, 70, 0, 0.4)');
+        glowGrad.addColorStop(1, 'rgba(25, 30, 38, 0.98)');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(0, h - 70, w, 70);
+
+        ctx.fillStyle = '#10141c';
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (let x = 0; x <= w; x += 25) {
+          const rh = 18 + Math.sin(x * 0.04) * 14 + Math.random() * 8;
+          ctx.lineTo(x, h - rh);
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fill();
+      });
     }
 
     this.materials = {
       // Metallic chassis
       chrome: new THREE.MeshStandardMaterial({
-        color: 0x99aab8,
-        metalness: 0.9,
-        roughness: 0.25
+        color: 0xb5c4d2,
+        metalness: 0.92,
+        roughness: 0.2
       }),
       darkMetal: new THREE.MeshStandardMaterial({
-        color: 0x22272e,
+        color: 0x303742,
         metalness: 0.8,
-        roughness: 0.4
+        roughness: 0.35
       }),
       gunmetal: new THREE.MeshStandardMaterial({
-        color: 0x3a424a,
+        color: 0x4a535e,
         metalness: 0.75,
-        roughness: 0.35
+        roughness: 0.3
       }),
       hazard: new THREE.MeshStandardMaterial({
         color: 0xd4a017,
@@ -130,30 +310,31 @@ const ModelFactory = {
 
       // Environment
       concrete: new THREE.MeshStandardMaterial({
-        color: 0x3b3d40,
+        color: 0x555d68,
         map: groundTexture,
-        roughness: 0.85,
-        metalness: 0.15
+        roughness: 0.8,
+        metalness: 0.2
       }),
       ruinBrick: new THREE.MeshStandardMaterial({
-        color: 0x483d3b,
-        roughness: 0.95,
-        metalness: 0.05
+        color: 0x4a5059,
+        map: buildingTexture,
+        roughness: 0.85,
+        metalness: 0.1
       }),
       bunkerWall: new THREE.MeshStandardMaterial({
-        color: 0x1f2429,
+        color: 0x323a45,
         map: wallTexture,
         metalness: 0.5,
         roughness: 0.5
       }),
       bunkerFloor: new THREE.MeshStandardMaterial({
-        color: 0x14181c,
+        color: 0x252d36,
         map: groundTexture,
         metalness: 0.6,
         roughness: 0.4
       }),
       rustMetal: new THREE.MeshStandardMaterial({
-        color: 0x4d3326,
+        color: 0x594235,
         metalness: 0.6,
         roughness: 0.8
       })
@@ -873,10 +1054,59 @@ const ModelFactory = {
     return pad;
   },
 
+  // 3D Panoramic Bitmap Skyline Backdrop of Ruined Los Angeles
+  createSkylineBackdrop(radius = 280, height = 150) {
+    this.initMaterials();
+    const group = new THREE.Group();
+
+    // Giant Panoramic Skyline Cylinder
+    if (this.skylineTexture) {
+      const cylGeo = new THREE.CylinderGeometry(radius, radius, height, 48, 1, true);
+      const cylMat = new THREE.MeshBasicMaterial({
+        map: this.skylineTexture,
+        side: THREE.BackSide,
+        depthWrite: false
+      });
+      const cyl = new THREE.Mesh(cylGeo, cylMat);
+      cyl.position.y = height / 2 - 15;
+      group.add(cyl);
+    }
+
+    // Dynamic 3D Volumetric Searchlight Beams in the Night Sky
+    const searchlightColors = [0x88ccff, 0x00e5ff, 0xff5555, 0x66ddff];
+    for (let i = 0; i < 4; i++) {
+      const angle = (i * Math.PI) / 2 + 0.35;
+      const x = Math.cos(angle) * (radius * 0.72);
+      const z = Math.sin(angle) * (radius * 0.72);
+
+      const beamGeo = new THREE.CylinderGeometry(0.8, 16, 180, 12, 1, true);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: searchlightColors[i],
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.set(x, 80, z);
+      beam.rotation.z = 0.28 * (i % 2 === 0 ? 1 : -1);
+      beam.rotation.x = 0.18;
+      beam.userData = { initialZ: beam.rotation.z, speed: 0.6 + i * 0.25 };
+      group.add(beam);
+    }
+
+    return group;
+  },
+
   // 3D Cinematic Showcase for Title Screen & Menus
   createTitleShowcase() {
     this.initMaterials();
     const showcase = new THREE.Group();
+
+    // Backdrop skyline
+    const backdrop = this.createSkylineBackdrop(50, 45);
+    backdrop.position.y = -5;
+    showcase.add(backdrop);
 
     // Ground platform with glowing grid
     const floorGeo = new THREE.CylinderGeometry(15, 16, 0.4, 32);
