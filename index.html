@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>The Terminator: 2029 - 3D Browser Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Game Container -->
+  <div id="game-container">
+    <!-- 3D WebGL Canvas -->
+    <canvas id="viewport-canvas"></canvas>
+
+    <!-- Optional CRT Scanlines & Screen Curvature Overlay -->
+    <div id="crt-overlay"></div>
+
+    <!-- A.C.E. Suit Cockpit Bezel & HUD Overlay -->
+    <div id="hud-overlay">
+      <div class="cockpit-bezel"></div>
+
+      <!-- TOP BAR -->
+      <div class="hud-top">
+        <div class="hud-group">
+          <div class="hud-title">A.C.E. BATTLE ARMOR // SYS.ONLINE</div>
+          <div class="hud-badge hud-coords" id="hud-coords-box">
+            GRID: <span id="hud-coords-val">[00, 00]</span>
+          </div>
+          <div class="hud-badge hud-timer" id="hud-timer-box" style="display: none;">
+            T-MINUS: <span id="hud-timer-val">00:00</span>
+          </div>
+        </div>
+
+        <!-- Upper Compass Tape -->
+        <div class="compass-container">
+          <div class="compass-tape">
+            <div class="compass-needle"></div>
+            <div class="compass-readout" id="compass-readout">N 000°</div>
+          </div>
+        </div>
+
+        <div class="hud-group">
+          <div class="hud-badge" id="hud-mission-title">MISSION 1</div>
+        </div>
+      </div>
+
+      <!-- COMMS MESSAGES -->
+      <div class="hud-messages" id="hud-messages"></div>
+
+      <!-- CENTER RETICLE & TARGET LOCK -->
+      <div class="hud-center">
+        <div class="reticle-box" id="reticle-box">
+          <div class="reticle-dot"></div>
+        </div>
+
+        <div class="target-info-box" id="target-info-box">
+          <div id="target-name">NO TARGET</div>
+          <div id="target-range">RANGE: --</div>
+          <div id="target-hp">ARMOR: --</div>
+        </div>
+
+        <div class="interaction-prompt" id="interaction-prompt">
+          <span id="interaction-text">[E] OPERATE</span>
+        </div>
+      </div>
+
+      <!-- BOTTOM INSTRUMENT PANELS -->
+      <div class="hud-bottom">
+        <!-- Left: Armor & Shield Integrity -->
+        <div class="panel-armor">
+          <div class="panel-title">CHASSIS INTEGRITY</div>
+
+          <div class="stat-bar-container">
+            <div class="stat-label-row">
+              <span>DEFLECTOR SHIELD</span>
+              <span id="shield-val">100%</span>
+            </div>
+            <div class="stat-bar-track">
+              <div class="stat-bar-fill shield" id="shield-fill"></div>
+            </div>
+          </div>
+
+          <div class="stat-bar-container">
+            <div class="stat-label-row">
+              <span>FRONT ARMOR</span>
+              <span id="armor-front-val">100%</span>
+            </div>
+            <div class="stat-bar-track">
+              <div class="stat-bar-fill armor-front" id="armor-front-fill"></div>
+            </div>
+          </div>
+
+          <div class="stat-bar-container">
+            <div class="stat-label-row">
+              <span>REAR ARMOR</span>
+              <span id="armor-rear-val">100%</span>
+            </div>
+            <div class="stat-bar-track">
+              <div class="stat-bar-fill armor-rear" id="armor-rear-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center: Weapons, Thermal Gauge & Quick Inventory -->
+        <div class="panel-center-weapons">
+          <!-- Active Mission Objective Readout -->
+          <div id="hud-mission-obj" style="font-size: 12px; letter-spacing: 1px; color: var(--term-cyan); margin-bottom: 2px;">
+            OBJ: RECONNAISSANCE
+          </div>
+
+          <div class="heat-gauge-container">
+            <div class="stat-label-row" style="margin-bottom: 3px;">
+              <span>PPC THERMAL HEAT</span>
+              <span id="heat-val">0%</span>
+            </div>
+            <div class="heat-bar-track">
+              <div class="heat-bar-fill" id="heat-fill"></div>
+            </div>
+          </div>
+
+          <div class="weapons-row">
+            <div class="weapon-slot active">
+              <div class="weapon-slot-name" id="weapon-pri-name">40-Watt PPC</div>
+              <div class="weapon-slot-ammo" id="weapon-pri-status">ONLINE</div>
+            </div>
+            <div class="weapon-slot">
+              <div class="weapon-slot-name" id="weapon-sec-name">Fusion Grenades</div>
+              <div class="weapon-slot-ammo" id="weapon-sec-ammo">AMMO: 04</div>
+            </div>
+          </div>
+
+          <div class="inventory-slots-row">
+            <div class="inv-slot" id="inv-slot-1"><span class="inv-slot-num">1</span><span class="inv-slot-icon"></span><span class="inv-slot-count"></span></div>
+            <div class="inv-slot" id="inv-slot-2"><span class="inv-slot-num">2</span><span class="inv-slot-icon"></span><span class="inv-slot-count"></span></div>
+            <div class="inv-slot" id="inv-slot-3"><span class="inv-slot-num">3</span><span class="inv-slot-icon"></span><span class="inv-slot-count"></span></div>
+            <div class="inv-slot" id="inv-slot-4"><span class="inv-slot-num">4</span><span class="inv-slot-icon"></span><span class="inv-slot-count"></span></div>
+            <div class="inv-slot" id="inv-slot-5"><span class="inv-slot-num">5</span><span class="inv-slot-icon"></span><span class="inv-slot-count"></span></div>
+          </div>
+        </div>
+
+        <!-- Right: Tactical Radar / Minimap -->
+        <div class="panel-radar">
+          <div class="panel-title" style="margin-bottom: 6px;">TACTICAL SCANNER</div>
+          <div class="radar-screen">
+            <div class="radar-crosshair"></div>
+            <div class="radar-rings"></div>
+            <div class="radar-sweep"></div>
+            <canvas id="radar-canvas" width="150" height="150"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         MODAL LAYERS & SCREENS
+         ===================================================================== -->
+
+    <!-- 1. TITLE SCREEN -->
+    <div class="modal-layer" id="title-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title">RESISTANCE SPECIAL OPERATIONS COMMAND</div>
+          <div class="terminal-header-sub">LOS ANGELES // 2029 A.D.</div>
+        </div>
+        <div class="terminal-body" style="align-items: center; justify-content: center;">
+          <div class="title-logo-box">
+            <div class="title-sub">BETHESDA SOFTWORKS 1992 CLASSIC // FULL 3D EDITION</div>
+            <div class="title-main">THE TERMINATOR</div>
+            <div class="title-year">2029</div>
+            <div class="title-tagline">HUMAN RESISTANCE SPECIAL OPERATIONS DIVISION // A.C.E. BATTLE ARMOR</div>
+          </div>
+
+          <div class="menu-options-list">
+            <button class="term-btn primary" id="btn-title-campaign">START CAMPAIGN</button>
+            <button class="term-btn" id="btn-title-training">COMBAT SIMULATOR</button>
+            <button class="term-btn" id="btn-title-armory">SUIT LOADOUT & ARMORY</button>
+            <button class="term-btn" id="btn-title-settings">CONTROLS & SETTINGS</button>
+            <button class="term-btn" id="btn-title-intel">INTELLIGENCE ARCHIVES</button>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <span>JOHN CONNOR // RESISTANCE HQ</span>
+          <span>CYBERNETIC DEFENSE PROTOCOL ACTIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. MISSION SELECT SCREEN -->
+    <div class="modal-layer hidden" id="mission-select-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title">TACTICAL MISSION SELECTOR</div>
+          <div class="terminal-header-sub">SELECT ASSIGNMENT</div>
+        </div>
+        <div class="terminal-body">
+          <div class="mission-select-grid" id="mission-select-list"></div>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn" onclick="Game.showTitleScreen()">RETURN TO BASE</button>
+          <span>CHOOSE TARGET SECTOR</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. MISSION BRIEFING SCREEN -->
+    <div class="modal-layer hidden" id="briefing-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title" id="briefing-title">MISSION BRIEFING</div>
+          <div class="terminal-header-sub" id="briefing-sub">ORDERS & RECONNAISSANCE</div>
+        </div>
+        <div class="terminal-body">
+          <div class="briefing-split">
+            <div class="briefing-text-box" id="briefing-text"></div>
+            <div class="briefing-intel-box">
+              <div class="intel-heading">MISSION PARAMETERS</div>
+              <div class="intel-item"><span>REQUIRED RANK:</span> <strong id="briefing-rank">PRIVATE</strong></div>
+              <div class="intel-item"><span>TIME LIMIT:</span> <strong id="briefing-timer">NONE</strong></div>
+              <div class="intel-item"><span>RECOMMENDED LOADOUT:</span> <strong id="briefing-loadout-rec">40W PPC + GRENADES</strong></div>
+
+              <div class="intel-heading" style="margin-top: 10px;">TACTICAL OBJECTIVES</div>
+              <ul id="briefing-objectives-list" style="padding-left: 20px; font-size: 12px; line-height: 1.5; color: #cbe3eb;"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn" id="btn-briefing-back">BACK</button>
+          <div style="display: flex; gap: 12px;">
+            <button class="term-btn" id="btn-briefing-armory">CONFIGURE LOADOUT</button>
+            <button class="term-btn primary" id="btn-briefing-deploy">DEPLOY TO SECTOR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. ARMORY & LOADOUT SCREEN -->
+    <div class="modal-layer hidden" id="armory-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title">A.C.E. SUIT ARMORY & HARDPOINTS</div>
+          <div class="terminal-header-sub">WEAPONS & SPECIALIZED HARDWARE</div>
+        </div>
+        <div class="terminal-body">
+          <div class="armory-layout">
+            <div class="armory-section">
+              <div class="intel-heading">PRIMARY PHASED PLASMA CANNON</div>
+              <div class="item-picker-list" id="armory-pri-list"></div>
+            </div>
+            <div class="armory-section">
+              <div class="intel-heading">SECONDARY ORDNANCE</div>
+              <div class="item-picker-list" id="armory-sec-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn" id="btn-armory-back">BACK TO BRIEFING</button>
+          <button class="term-btn primary" id="btn-armory-deploy">CONFIRM & DEPLOY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. CONTROLS & SETTINGS SCREEN -->
+    <div class="modal-layer hidden" id="settings-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title">SYSTEM CONFIGURATION & CONTROLS</div>
+          <div class="terminal-header-sub">CUSTOMIZE INPUTS & DISPLAY</div>
+        </div>
+        <div class="terminal-body">
+          <div class="settings-grid">
+            <!-- Left: Control Mode & Sensitivity -->
+            <div class="settings-col">
+              <div class="intel-heading">INPUT & CAMERA CONFIGURATION</div>
+
+              <div class="setting-row">
+                <div>
+                  <div class="setting-label">CONTROL SCHEME</div>
+                  <div class="setting-desc">Modern FPS (WASD + Mouse-Look) vs Classic Retro</div>
+                </div>
+                <div class="setting-control">
+                  <select id="setting-control-mode" style="background: #091624; border: 1px solid var(--term-cyan); color: #fff; font-family: var(--term-font); padding: 4px;">
+                    <option value="modern">Modern (WASD + Mouse-Look)</option>
+                    <option value="classic">Classic Retro (Keyboard Turn)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div>
+                  <div class="setting-label">MOUSE SENSITIVITY</div>
+                  <div class="setting-desc">Horizontal & vertical look speed</div>
+                </div>
+                <div class="setting-control">
+                  <input type="range" id="setting-mouse-sens" min="0.2" max="3.5" step="0.1" value="1.2">
+                  <span id="setting-sens-val" style="min-width: 25px;">1.2</span>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div>
+                  <div class="setting-label">INVERT Y-AXIS</div>
+                  <div class="setting-desc">Invert vertical pitch mouse movement</div>
+                </div>
+                <div class="setting-control">
+                  <input type="checkbox" id="setting-invert-y" class="checkbox-toggle">
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div>
+                  <div class="setting-label">CRT SCANLINE EFFECT</div>
+                  <div class="setting-desc">Authentic 1992 retro monitor scanlines</div>
+                </div>
+                <div class="setting-control">
+                  <input type="checkbox" id="setting-crt-toggle" class="checkbox-toggle" checked>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div>
+                  <div class="setting-label">FIELD OF VIEW (FOV)</div>
+                  <div class="setting-desc">Camera lens angle (60° to 100°)</div>
+                </div>
+                <div class="setting-control">
+                  <input type="range" id="setting-fov" min="60" max="100" step="1" value="75">
+                  <span id="setting-fov-val" style="min-width: 25px;">75</span>
+                </div>
+              </div>
+
+              <div class="intel-heading" style="margin-top: 8px;">AUDIO VOLUMES</div>
+
+              <div class="setting-row">
+                <div class="setting-label">MASTER VOLUME</div>
+                <div class="setting-control">
+                  <input type="range" id="setting-vol-master" min="0" max="1" step="0.05" value="0.8">
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">MUSIC VOLUME</div>
+                <div class="setting-control">
+                  <input type="range" id="setting-vol-music" min="0" max="1" step="0.05" value="0.55">
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">SFX VOLUME</div>
+                <div class="setting-control">
+                  <input type="range" id="setting-vol-sfx" min="0" max="1" step="0.05" value="0.75">
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Keybinding Rebinding -->
+            <div class="settings-col">
+              <div class="intel-heading">KEYBOARD & MOUSE REBINDING</div>
+              <div id="keybinds-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn danger" id="btn-settings-reset">RESET DEFAULTS</button>
+          <button class="term-btn primary" id="btn-settings-close">SAVE & CLOSE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. PAUSE SCREEN -->
+    <div class="modal-layer hidden" id="pause-screen">
+      <div class="terminal-window" style="max-width: 500px;">
+        <div class="terminal-header">
+          <div class="terminal-header-title">SIMULATION PAUSED</div>
+          <div class="terminal-header-sub">STANDBY</div>
+        </div>
+        <div class="terminal-body" style="align-items: center;">
+          <div class="menu-options-list" style="width: 100%;">
+            <button class="term-btn primary" id="btn-pause-resume">RESUME MISSION</button>
+            <button class="term-btn" id="btn-pause-settings">OPTIONS & CONTROLS</button>
+            <button class="term-btn danger" id="btn-pause-abort">ABORT MISSION</button>
+          </div>
+        </div>
+        <div class="terminal-footer">
+          <span>PRESS [ESC] TO RESUME</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. MISSION DEBRIEFING SCREEN (Victory / Defeat) -->
+    <div class="modal-layer hidden" id="debrief-screen">
+      <div class="terminal-window" style="max-width: 700px;">
+        <div class="terminal-header">
+          <div class="terminal-header-title">MISSION DEBRIEFING</div>
+          <div class="terminal-header-sub">TACTICAL ASSESSMENT</div>
+        </div>
+        <div class="terminal-body">
+          <div class="debrief-status" id="debrief-status">MISSION ACCOMPLISHED</div>
+          <div id="debrief-promotion" style="font-size: 16px; color: var(--term-amber); text-align: center; font-weight: bold; margin-bottom: 12px; display: none;"></div>
+          <div id="debrief-message" style="font-size: 13px; line-height: 1.6; color: #cbe3eb; text-align: center; margin-bottom: 20px;"></div>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn" id="btn-debrief-menu">MAIN MENU</button>
+          <div style="display: flex; gap: 12px;">
+            <button class="term-btn" id="btn-debrief-retry">RETRY MISSION</button>
+            <button class="term-btn primary" id="btn-debrief-next">PROCEED</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. INTELLIGENCE ARCHIVES (Lore & Bestiary) -->
+    <div class="modal-layer hidden" id="intel-screen">
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="terminal-header-title">RESISTANCE TACTICAL DATABASE</div>
+          <div class="terminal-header-sub">SKYNET THREAT ENCYCLOPEDIA</div>
+        </div>
+        <div class="terminal-body" style="font-size: 13px; line-height: 1.6; color: #c0d8e8;">
+          <div class="intel-heading">SKYNET COMBAT HARDWARE</div>
+          <p><strong>T-800 Endoskeleton:</strong> Cyberdyne Systems Series 800 Terminator. Armored hyperalloy chassis, hyper-responsive servos, red ocular sensors. Armed with 40-Watt Phased Plasma Rifles. Extremely lethal at mid-to-long range.</p>
+          <br>
+          <p><strong>HK-Aerial (Hunter-Killer Aerial):</strong> Large VTOL gunship patrolling the skies of ruined Los Angeles. Equipped with twin phased plasma blasters and searchlights. Swoops low to deliver devastating strafing runs.</p>
+          <br>
+          <p><strong>HK-Tank (Hunter-Killer Ground):</strong> Massive multi-ton treaded siege machine. Heavy frontal sloped armor renders light plasma ineffective. Carries dual synchronized heavy plasma cannons.</p>
+          <br>
+          <p><strong>G-500 / G-1000 Assault Drones:</strong> Fast, hovering skirmish units designed to harass human perimeter lines and flush resistance fighters out of cover.</p>
+          <br>
+          <p><strong>Spider Scouts:</strong> Multi-legged arachnid infiltrators designed to scuttle through bunker ductwork and collapsed corridors.</p>
+          <br>
+          <div class="intel-heading">A.C.E. BATTLE SUIT SYSTEMS</div>
+          <p>The Advanced Combat Environment (A.C.E.) powered armor was developed by John Connor's underground engineering teams. It features magnetic deflector shielding, modular PPC hardpoints, localized directional armor plates, and sub-atomic diatomic scanners.</p>
+        </div>
+        <div class="terminal-footer">
+          <button class="term-btn" id="btn-intel-back">RETURN TO MENU</button>
+          <span>CLEARANCE LEVEL 5 // RESTRICTED</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/lib/three.min.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/weapons.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/missions.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
