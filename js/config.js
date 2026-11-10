@@ -14,9 +14,9 @@ class ConfigManager {
       mouseSensitivity: 1.2,
       invertY: false,
       smoothTurnSpeed: 2.2, // for keyboard turning
-      graphicsMode: 'vga', // 'vga' (384x240 16:10), 'dos' (320x200 Mode 13h), 'svga' (640x400), 'native'
-      dithering8bit: true, // 256-color VGA Bayer ordered dithering
-      voxelDebris: true, // 3D voxel physics debris on explosions
+      graphicsMode: 'native', // 'native' (High-Fidelity 3D VGA), 'svga' (640x400), 'vga' (384x240), 'dos' (320x200)
+      dithering8bit: false, // Optional 256-color VGA Bayer ordered dithering
+      voxelDebris: true, // 3D physics debris on robot explosions
       crtScanlines: true,
       fov: 75,
       cockpitBezel: true,

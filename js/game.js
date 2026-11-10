@@ -155,9 +155,9 @@ class GameEngine {
 
   updateRendererResolution() {
     if (!this.renderer) return;
-    const mode = (this.config && this.config.settings && this.config.settings.graphicsMode) || 'vga';
-    let tw = 384;
-    let th = 240;
+    const mode = (this.config && this.config.settings && this.config.settings.graphicsMode) || 'native';
+    let tw = 800;
+    let th = 600;
 
     const wWidth = typeof window !== 'undefined' ? (window.innerWidth || 800) : 800;
     const wHeight = typeof window !== 'undefined' ? (window.innerHeight || 600) : 600;
@@ -169,8 +169,10 @@ class GameEngine {
     } else if (mode === 'svga') {
       tw = 640; th = 400;
     } else {
-      tw = wWidth;
-      th = wHeight;
+      // Native High-Fidelity 3D (Native Crisp)
+      const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+      tw = Math.floor(wWidth * dpr);
+      th = Math.floor(wHeight * dpr);
     }
 
     this.renderWidth = tw;
@@ -250,11 +252,11 @@ class GameEngine {
 
             if (uEnableDither > 0.5) {
               float dither = getBayer4x4(gl_FragCoord.xy) - 0.5;
-              col += dither * (1.0 / 12.0);
-              // 8-Bit Color Quantization (3 bits Red, 3 bits Green, 2 bits Blue)
-              col.r = floor(col.r * 7.0 + 0.5) / 7.0;
-              col.g = floor(col.g * 7.0 + 0.5) / 7.0;
-              col.b = floor(col.b * 3.0 + 0.5) / 3.0;
+              col += dither * (1.0 / 24.0);
+              // High-Fidelity 15-level per channel (4096-color VGA style quantization)
+              col.r = floor(col.r * 15.0 + 0.5) / 15.0;
+              col.g = floor(col.g * 15.0 + 0.5) / 15.0;
+              col.b = floor(col.b * 15.0 + 0.5) / 15.0;
             }
 
             if (uEnableScanlines > 0.5) {
@@ -1201,10 +1203,42 @@ class GameEngine {
     const wallMat = ModelFactory.materials.darkMetal;
     const h = 20;
 
-    const northWall = new THREE.Mesh(new THREE.BoxGeometry(width, h, 2), wallMat);
-    northWall.position.set(width / 2, h / 2, 0);
-    this.scene.add(northWall);
-    this.colliders.push({ box: new THREE.Box3().setFromObject(northWall) });
+    // North Wall with fortified security gateway and transporter
+    const gateWidth = 12;
+    const nLeftW = (width - gateWidth) / 2;
+    const nLeft = new THREE.Mesh(new THREE.BoxGeometry(nLeftW, h, 2), wallMat);
+    nLeft.position.set(nLeftW / 2, h / 2, 0);
+    this.scene.add(nLeft);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(nLeft) });
+
+    const nRight = new THREE.Mesh(new THREE.BoxGeometry(nLeftW, h, 2), wallMat);
+    nRight.position.set(width - nLeftW / 2, h / 2, 0);
+    this.scene.add(nRight);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(nRight) });
+
+    const nLintel = new THREE.Mesh(new THREE.BoxGeometry(gateWidth, h - 6, 2), wallMat);
+    nLintel.position.set(width / 2, 6 + (h - 6) / 2, 0);
+    this.scene.add(nLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(nLintel) });
+
+    const northGate = ModelFactory.createBlastDoor('NORTH GATE');
+    northGate.position.set(width / 2, 0, 0);
+    this.scene.add(northGate);
+
+    // North Sector Transporter Pad
+    const northTransporter = ModelFactory.createTransporterPad('NORTH SECTOR TRANSPORTER');
+    northTransporter.position.set(width / 2, 0, 4.0);
+    this.scene.add(northTransporter);
+    this.interactiveObjects.push({
+      mesh: northTransporter,
+      type: 'transporter',
+      interactDist: 6.0,
+      prompt: '[E] USE NORTH SECTOR TRANSPORTER',
+      onInteract: () => {
+        this.audio.playElevator();
+        this.hud.addCommMessage('SUIT AI', 'Perimeter energy shield active. Transporter online.', 'normal');
+      }
+    });
 
     const southWall = new THREE.Mesh(new THREE.BoxGeometry(width, h, 2), wallMat);
     southWall.position.set(width / 2, h / 2, depth);
@@ -1247,7 +1281,7 @@ class GameEngine {
     }
   }
 
-  buildBunkerRoom({ minX, maxX, minZ, maxZ, wallHeight = 8, wallMat, floorMat, ceilingLight = true }) {
+  buildBunkerRoom({ minX, maxX, minZ, maxZ, wallHeight = 8, wallMat, floorMat, ceilingLight = true, doorWall = 'north', doorWidth = 6.0, doorLabel = 'BUNKER' }) {
     const minWx = minX * 2;
     const maxWx = maxX * 2;
     const minWz = minZ * 2;
@@ -1274,20 +1308,60 @@ class GameEngine {
     ceil.position.set(cx, wallHeight, cz);
     this.scene.add(ceil);
 
-    // 4 Walls with Box3 colliders
+    // 4 Walls with Box3 colliders & physical doorway opening
     const wallThick = 2.0;
+    const doorH = 4.5;
+    const lintelH = wallHeight - doorH;
 
     // North wall (min Z)
-    const nWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
-    nWall.position.set(cx, wallHeight / 2, minWz - wallThick / 2);
-    this.scene.add(nWall);
-    this.colliders.push({ box: new THREE.Box3().setFromObject(nWall) });
+    if (doorWall === 'north') {
+      const leftW = (width - doorWidth) / 2;
+      const leftMesh = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallHeight, wallThick), wallMaterial);
+      leftMesh.position.set(cx - width / 2 + leftW / 2, wallHeight / 2, minWz - wallThick / 2);
+      this.scene.add(leftMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(leftMesh) });
+
+      const rightW = (width - doorWidth) / 2;
+      const rightMesh = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallHeight, wallThick), wallMaterial);
+      rightMesh.position.set(cx + width / 2 - rightW / 2, wallHeight / 2, minWz - wallThick / 2);
+      this.scene.add(rightMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(rightMesh) });
+
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, lintelH, wallThick), wallMaterial);
+      lintel.position.set(cx, doorH + lintelH / 2, minWz - wallThick / 2);
+      this.scene.add(lintel);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(lintel) });
+    } else {
+      const nWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
+      nWall.position.set(cx, wallHeight / 2, minWz - wallThick / 2);
+      this.scene.add(nWall);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(nWall) });
+    }
 
     // South wall (max Z)
-    const sWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
-    sWall.position.set(cx, wallHeight / 2, maxWz + wallThick / 2);
-    this.scene.add(sWall);
-    this.colliders.push({ box: new THREE.Box3().setFromObject(sWall) });
+    if (doorWall === 'south') {
+      const leftW = (width - doorWidth) / 2;
+      const leftMesh = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallHeight, wallThick), wallMaterial);
+      leftMesh.position.set(cx - width / 2 + leftW / 2, wallHeight / 2, maxWz + wallThick / 2);
+      this.scene.add(leftMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(leftMesh) });
+
+      const rightW = (width - doorWidth) / 2;
+      const rightMesh = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallHeight, wallThick), wallMaterial);
+      rightMesh.position.set(cx + width / 2 - rightW / 2, wallHeight / 2, maxWz + wallThick / 2);
+      this.scene.add(rightMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(rightMesh) });
+
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, lintelH, wallThick), wallMaterial);
+      lintel.position.set(cx, doorH + lintelH / 2, maxWz + wallThick / 2);
+      this.scene.add(lintel);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(lintel) });
+    } else {
+      const sWall = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, wallThick), wallMaterial);
+      sWall.position.set(cx, wallHeight / 2, maxWz + wallThick / 2);
+      this.scene.add(sWall);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(sWall) });
+    }
 
     // West wall (min X)
     const wWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick, wallHeight, depth + wallThick * 2), wallMaterial);
@@ -1307,6 +1381,102 @@ class GameEngine {
       light.position.set(cx, wallHeight - 1.5, cz);
       this.scene.add(light);
     }
+  }
+
+  addSectorBarrier({ x, z, span = 20, orientation = 'x', height = 8, label = 'SECTOR GATE', targetCoord = null, targetMessage = '', isInterior = false }) {
+    const wallMat = ModelFactory.materials.darkMetal;
+    const doorW = 6.0;
+    const halfSpan = span / 2;
+    const sideW = (span - doorW) / 2;
+    const lintelH = height - 4.5;
+    const wallThick = 2.0;
+
+    if (orientation === 'x') {
+      const leftMesh = new THREE.Mesh(new THREE.BoxGeometry(sideW, height, wallThick), wallMat);
+      leftMesh.position.set(x - halfSpan + sideW / 2, height / 2, z);
+      this.scene.add(leftMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(leftMesh) });
+
+      const rightMesh = new THREE.Mesh(new THREE.BoxGeometry(sideW, height, wallThick), wallMat);
+      rightMesh.position.set(x + halfSpan - sideW / 2, height / 2, z);
+      this.scene.add(rightMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(rightMesh) });
+
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW, lintelH, wallThick), wallMat);
+      lintel.position.set(x, 4.5 + lintelH / 2, z);
+      this.scene.add(lintel);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(lintel) });
+    } else {
+      const leftMesh = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, sideW), wallMat);
+      leftMesh.position.set(x, height / 2, z - halfSpan + sideW / 2);
+      this.scene.add(leftMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(leftMesh) });
+
+      const rightMesh = new THREE.Mesh(new THREE.BoxGeometry(wallThick, height, sideW), wallMat);
+      rightMesh.position.set(x, height / 2, z + halfSpan - sideW / 2);
+      this.scene.add(rightMesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(rightMesh) });
+
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(wallThick, lintelH, doorW), wallMat);
+      lintel.position.set(x, 4.5 + lintelH / 2, z);
+      this.scene.add(lintel);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(lintel) });
+    }
+
+    const door = ModelFactory.createBlastDoor(label);
+    door.position.set(x, 0, z);
+    if (orientation === 'z') door.rotation.y = Math.PI / 2;
+    this.scene.add(door);
+
+    const pad = ModelFactory.createTransporterPad(label + ' TRANSPORTER');
+    const padOffset = orientation === 'x' ? { x: 0, z: 3.5 } : { x: 3.5, z: 0 };
+    pad.position.set(x + padOffset.x, 0, z + padOffset.z);
+    this.scene.add(pad);
+
+    if (targetCoord) {
+      this.interactiveObjects.push({
+        mesh: pad,
+        type: 'transporter',
+        interactDist: 7.0,
+        prompt: `[E] USE ${label.toUpperCase()} TRANSPORTER`,
+        onInteract: () => {
+          this.transitionPlayerToArea(targetCoord, 0, targetMessage || `${label} transition complete.`, isInterior);
+        }
+      });
+    }
+
+    return { door, pad };
+  }
+
+  addExtractionTransporter(coord) {
+    const pad = ModelFactory.createTransporterPad('EXTRACTION TRANSPORTER');
+    pad.position.set(coord.x * 2, 0, coord.y * 2);
+    this.scene.add(pad);
+    this.interactiveObjects.push({
+      mesh: pad,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: `[E] EVACUATE VIA EXTRACTION TRANSPORTER [${coord.x}, ${coord.y}]`,
+      onInteract: () => {
+        const remaining = (this.currentMission && this.currentMission.objectives)
+          ? this.currentMission.objectives.filter(o => !o.done && o.id !== 'extract' && o.id !== 'extract_elevator' && o.id !== 'escape_shuttle')
+          : [];
+
+        if (remaining.length > 0) {
+          const names = remaining.map(o => o.text).join('; ');
+          this.hud.addCommMessage('SUIT AI', `CANNOT EXTRACT - Unfinished orders: ${names}`, 'warn');
+          return;
+        }
+
+        const extractObj = this.currentMission.objectives.find(o => o.id === 'extract' || o.id === 'extract_elevator' || o.id === 'escape_shuttle');
+        if (extractObj) extractObj.done = true;
+
+        this.audio.playElevator();
+        this.hud.addCommMessage('JOHN CONNOR', 'Transporter lock established! Evacuation sequence complete!', 'success');
+        this.missionVictory();
+      }
+    });
+    return pad;
   }
 
   // MISSION 1: Relay Station [15, 16], Underground Lab [25, 48], Telemetry [82, 64]
@@ -1366,6 +1536,22 @@ class GameEngine {
     });
 
     // 2. Underground Lab Entrance at [25, 48] on Surface - Objective: enter_lab
+    const labWallMat = ModelFactory.materials.darkMetal;
+    const labWallL = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), labWallMat);
+    labWallL.position.set(25 * 2 - 7, 4, 48 * 2);
+    this.scene.add(labWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(labWallL) });
+
+    const labWallR = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), labWallMat);
+    labWallR.position.set(25 * 2 + 7, 4, 48 * 2);
+    this.scene.add(labWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(labWallR) });
+
+    const labLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), labWallMat);
+    labLintel.position.set(25 * 2, 4.5 + 1.75, 48 * 2);
+    this.scene.add(labLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(labLintel) });
+
     const labDoor = ModelFactory.createBlastDoor('LAB');
     labDoor.position.set(25 * 2, 0, 48 * 2);
     this.scene.add(labDoor);
@@ -1385,13 +1571,36 @@ class GameEngine {
       }
     });
 
+    // Surface Lab Transporter Pad at [25, 47]
+    const labTransporter = ModelFactory.createTransporterPad('LAB ENTRANCE TRANSPORTER');
+    labTransporter.position.set(25 * 2, 0, 47 * 2);
+    this.scene.add(labTransporter);
+    this.interactiveObjects.push({
+      mesh: labTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE LAB ENTRANCE TRANSPORTER [25, 48]',
+      onInteract: () => {
+        this.completeObjective('enter_lab');
+        this.transitionPlayerToArea(
+          { x: 80, y: 53 },
+          0,
+          'Transporter Lock Confirmed: Beaming into Subterranean Research Facility.',
+          true
+        );
+      }
+    });
+
     // Build Subterranean Lab Complex around [82, 64]
     this.buildBunkerRoom({
       minX: 74,
       maxX: 90,
       minZ: 50,
       maxZ: 76,
-      wallHeight: 8
+      wallHeight: 8,
+      doorWall: 'north',
+      doorWidth: 6.0,
+      doorLabel: 'LAB'
     });
 
     // Subterranean Lab Exit Elevator back to Surface at [80, 51]
@@ -1412,6 +1621,28 @@ class GameEngine {
         );
       }
     });
+
+    // Subterranean Lab Exit Transporter Pad at [80, 52]
+    const labExitTransporter = ModelFactory.createTransporterPad('SURFACE RETURN TRANSPORTER');
+    labExitTransporter.position.set(80 * 2, 0, 52 * 2);
+    this.scene.add(labExitTransporter);
+    this.interactiveObjects.push({
+      mesh: labExitTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE SURFACE RETURN TRANSPORTER',
+      onInteract: () => {
+        this.transitionPlayerToArea(
+          { x: 25, y: 46 },
+          Math.PI,
+          'Transporter Lock Engaged: Beaming to Surface Ruins. Evacuate to Extraction [25, 2]!',
+          false
+        );
+      }
+    });
+
+    // Extraction Transporter Pad at [25, 2]
+    this.addExtractionTransporter({ x: 25, y: 2 });
 
     // 3. Telemetry Data at [82, 64] inside the underground lab - Objective: get_telemetry
     const telemetry = ModelFactory.createCommGrid();
@@ -1443,6 +1674,35 @@ class GameEngine {
 
   // MISSION 2: Relay Tower 1 [6, 109], Comm Grid [25, 111], Relay Tower 2 [44, 108]
   buildMission2Sector() {
+    // Ruined buildings with colliders
+    const buildingPositions = [
+      { x: 15, z: 40, w: 20, d: 20, h: 35 },
+      { x: 35, z: 40, w: 22, d: 18, h: 42 },
+      { x: 10, z: 85, w: 18, d: 24, h: 30 },
+      { x: 40, z: 85, w: 20, d: 20, h: 38 }
+    ];
+    buildingPositions.forEach(b => {
+      const mesh = ModelFactory.createRuinBuilding(b.w, b.h, b.d);
+      mesh.position.set(b.x * 2, 0, b.z * 2);
+      this.scene.add(mesh);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(mesh) });
+    });
+
+    // Fortified Epsilon Sector Security Barrier Wall with Gate & Transporter at Z = 60
+    this.addSectorBarrier({
+      x: 25 * 2,
+      z: 60 * 2,
+      span: 80,
+      orientation: 'x',
+      height: 8,
+      label: 'EPSILON SECTOR GATE',
+      targetCoord: { x: 25, y: 70 },
+      targetMessage: 'Epsilon Sector Transporter engaged. Infiltrating machine territory.'
+    });
+
+    // Extraction Transporter at [25, 1]
+    this.addExtractionTransporter({ x: 25, y: 1 });
+
     // Relay Tower 1 at [6, 109]
     const tower1 = ModelFactory.createRelayTower();
     tower1.position.set(6 * 2, 0, 109 * 2);
@@ -1533,7 +1793,23 @@ class GameEngine {
       }
     });
 
-    // Underground Entrance [16, 47] on Surface
+    // Underground Entrance [16, 47] on Surface with Barrier Wall
+    const entWallMat = ModelFactory.materials.darkMetal;
+    const entWallL = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), entWallMat);
+    entWallL.position.set(16 * 2 - 7, 4, 47 * 2);
+    this.scene.add(entWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(entWallL) });
+
+    const entWallR = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), entWallMat);
+    entWallR.position.set(16 * 2 + 7, 4, 47 * 2);
+    this.scene.add(entWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(entWallR) });
+
+    const entLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), entWallMat);
+    entLintel.position.set(16 * 2, 4.5 + 1.75, 47 * 2);
+    this.scene.add(entLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(entLintel) });
+
     const entrance = ModelFactory.createBlastDoor('SEC-9');
     entrance.position.set(16 * 2, 0, 47 * 2);
     this.scene.add(entrance);
@@ -1548,8 +1824,22 @@ class GameEngine {
       }
     });
 
+    const entTransporter = ModelFactory.createTransporterPad('SUB-LEVEL TRANSPORTER');
+    entTransporter.position.set(16 * 2, 0, 46 * 2);
+    this.scene.add(entTransporter);
+    this.interactiveObjects.push({
+      mesh: entTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE SUB-LEVEL TRANSPORTER [16, 47]',
+      onInteract: () => {
+        this.completeObjective('enter_complex');
+        this.transitionPlayerToArea({ x: 16, y: 108 }, 0, 'Transporter lock engaged: Beaming to Sub-Level 1.', true);
+      }
+    });
+
     // Sub-Level 1 Room [10..22, 104..116]
-    this.buildBunkerRoom({ minX: 10, maxX: 22, minZ: 104, maxZ: 116, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 10, maxX: 22, minZ: 104, maxZ: 116, wallHeight: 8, doorWall: 'north', doorLabel: 'L1' });
 
     // Exit elevator back to surface at [16, 106]
     const exitL1 = ModelFactory.createBlastDoor('SURFACE');
@@ -1581,7 +1871,7 @@ class GameEngine {
     });
 
     // Sub-Level 2 Room [102..114, 60..74]
-    this.buildBunkerRoom({ minX: 102, maxX: 114, minZ: 60, maxZ: 74, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 102, maxX: 114, minZ: 60, maxZ: 74, wallHeight: 8, doorWall: 'north', doorLabel: 'L2' });
 
     // Elevator back up to Level 1 at [108, 63]
     const elevUpL1 = ModelFactory.createBlastDoor('LEVEL-1');
@@ -1613,7 +1903,7 @@ class GameEngine {
     });
 
     // Sub-Level 3 Room (Temporal Vault) [74..88, 18..32]
-    this.buildBunkerRoom({ minX: 74, maxX: 88, minZ: 18, maxZ: 32, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 74, maxX: 88, minZ: 18, maxZ: 32, wallHeight: 8, doorWall: 'north', doorLabel: 'L3' });
 
     // Elevator back up to Level 2 at [81, 20]
     const elevUpL2 = ModelFactory.createBlastDoor('LEVEL-2');
@@ -1660,14 +1950,49 @@ class GameEngine {
     ];
 
     gates.forEach(g => {
+      const gateWallMat = ModelFactory.materials.darkMetal;
+      const wallL = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 2), gateWallMat);
+      wallL.position.set(g.x * 2 - 8, 4, g.y * 2);
+      this.scene.add(wallL);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(wallL) });
+
+      const wallR = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 2), gateWallMat);
+      wallR.position.set(g.x * 2 + 8, 4, g.y * 2);
+      this.scene.add(wallR);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(wallR) });
+
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), gateWallMat);
+      lintel.position.set(g.x * 2, 4.5 + 1.75, g.y * 2);
+      this.scene.add(lintel);
+      this.colliders.push({ box: new THREE.Box3().setFromObject(lintel) });
+
       const door = ModelFactory.createBlastDoor(`G-${g.id}`);
       door.position.set(g.x * 2, 0, g.y * 2);
       this.scene.add(door);
+      const doorCollider = { box: new THREE.Box3().setFromObject(door), mesh: door, isDoor: true };
+      this.colliders.push(doorCollider);
+
+      // Gate Transporter Pad
+      const gateTransporter = ModelFactory.createTransporterPad(`GATE ${g.id} TRANSPORTER`);
+      gateTransporter.position.set(g.x * 2, 0, g.y * 2 - 3.5);
+      this.scene.add(gateTransporter);
+      this.interactiveObjects.push({
+        mesh: gateTransporter,
+        type: 'transporter',
+        interactDist: 6.0,
+        prompt: `[E] USE GATE ${g.id} TRANSPORTER`,
+        onInteract: () => {
+          this.transitionPlayerToArea({ x: g.x, y: g.y + 4 }, 0, `Gate ${g.id} Transporter: Beam bypass successful.`);
+          this.audio.playElevator();
+        }
+      });
+
       this.interactiveObjects.push({
         mesh: door,
         type: 'door',
         prompt: `[E] BREACH GATE ${g.id}`,
         onInteract: () => {
+          doorCollider.disabled = true;
           this.scene.remove(door);
           this.audio.playExplosion(0.8);
           if (g.id === 8) {
@@ -1693,8 +2018,22 @@ class GameEngine {
       }
     });
 
+    const vaultTransporter = ModelFactory.createTransporterPad('VAULT TRANSPORTER');
+    vaultTransporter.position.set(25 * 2, 0, 110 * 2);
+    this.scene.add(vaultTransporter);
+    this.interactiveObjects.push({
+      mesh: vaultTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE DEFENSE VAULT TRANSPORTER [25, 111]',
+      onInteract: () => {
+        this.completeObjective('underground_code');
+        this.transitionPlayerToArea({ x: 12, y: 160 }, 0, 'Code Accepted: 38473-ENABLE. Beaming into Defense Network Core Vault...', true);
+      }
+    });
+
     // Subterranean Defense Vault [4..22, 154..176]
-    this.buildBunkerRoom({ minX: 4, maxX: 22, minZ: 154, maxZ: 176, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 4, maxX: 22, minZ: 154, maxZ: 176, wallHeight: 8, doorWall: 'north', doorLabel: 'VAULT' });
 
     // Return Door to Perimeter Trench at [12, 158]
     const vaultExit = ModelFactory.createBlastDoor('SURFACE');
@@ -1709,6 +2048,9 @@ class GameEngine {
         this.transitionPlayerToArea({ x: 25, y: 109 }, Math.PI, 'Exiting to Perimeter Trench.', false);
       }
     });
+
+    // Extraction Transporter at [25, 140]
+    this.addExtractionTransporter({ x: 25, y: 140 });
 
     // Defense Network Core at [9, 168]
     const core = ModelFactory.createCommGrid();
@@ -1764,7 +2106,23 @@ class GameEngine {
 
   // MISSION 5: Rescue Major Altorrez at [27, 85] (10-minute timer)
   buildMission5Sector() {
-    // Comm Base Gamma Entrance [111, 48] on Surface
+    // Comm Base Gamma Entrance [111, 48] on Surface with Barrier Wall
+    const gamWallMat = ModelFactory.materials.darkMetal;
+    const gamWallL = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), gamWallMat);
+    gamWallL.position.set(111 * 2 - 7, 4, 48 * 2);
+    this.scene.add(gamWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gamWallL) });
+
+    const gamWallR = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), gamWallMat);
+    gamWallR.position.set(111 * 2 + 7, 4, 48 * 2);
+    this.scene.add(gamWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gamWallR) });
+
+    const gamLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), gamWallMat);
+    gamLintel.position.set(111 * 2, 4.5 + 1.75, 48 * 2);
+    this.scene.add(gamLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gamLintel) });
+
     const entrance = ModelFactory.createBlastDoor('GAMMA');
     entrance.position.set(111 * 2, 0, 48 * 2);
     this.scene.add(entrance);
@@ -1779,8 +2137,22 @@ class GameEngine {
       }
     });
 
+    const gamTransporter = ModelFactory.createTransporterPad('GAMMA ENTRANCE TRANSPORTER');
+    gamTransporter.position.set(111 * 2, 0, 47 * 2);
+    this.scene.add(gamTransporter);
+    this.interactiveObjects.push({
+      mesh: gamTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE GAMMA ENTRANCE TRANSPORTER [111, 48]',
+      onInteract: () => {
+        this.completeObjective('enter_gamma');
+        this.transitionPlayerToArea({ x: 48, y: 46 }, 0, 'Gamma Transporter engaged. Beaming to Sub-Level 1...', true);
+      }
+    });
+
     // Sub-Level 1 Room [42..54, 42..52]
-    this.buildBunkerRoom({ minX: 42, maxX: 54, minZ: 42, maxZ: 52, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 42, maxX: 54, minZ: 42, maxZ: 52, wallHeight: 8, doorWall: 'north', doorLabel: 'GAMMA-L1' });
 
     // Exit back to surface at [48, 44]
     const exitL1 = ModelFactory.createBlastDoor('SURFACE');
@@ -1812,7 +2184,10 @@ class GameEngine {
     });
 
     // Level 2 Subterranean Chamber [20..42, 70..92]
-    this.buildBunkerRoom({ minX: 20, maxX: 42, minZ: 70, maxZ: 92, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 20, maxX: 42, minZ: 70, maxZ: 92, wallHeight: 8, doorWall: 'north', doorLabel: 'GAMMA-L2' });
+
+    // Extraction Transporter at [64, 1]
+    this.addExtractionTransporter({ x: 64, y: 1 });
 
     // Return elevator to Level 1 at [35, 73]
     const elevUpL1 = ModelFactory.createBlastDoor('LEVEL-1');
@@ -1923,7 +2298,23 @@ class GameEngine {
       }
     });
 
-    // Gamma Base Entrance [10, 47] on Surface
+    // Gamma Base Entrance [10, 47] on Surface with Barrier Wall
+    const gWallMat = ModelFactory.materials.darkMetal;
+    const gWallL = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), gWallMat);
+    gWallL.position.set(10 * 2 - 7, 4, 47 * 2);
+    this.scene.add(gWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gWallL) });
+
+    const gWallR = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), gWallMat);
+    gWallR.position.set(10 * 2 + 7, 4, 47 * 2);
+    this.scene.add(gWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gWallR) });
+
+    const gLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), gWallMat);
+    gLintel.position.set(10 * 2, 4.5 + 1.75, 47 * 2);
+    this.scene.add(gLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(gLintel) });
+
     const baseDoor = ModelFactory.createBlastDoor('GAMMA');
     baseDoor.position.set(10 * 2, 0, 47 * 2);
     this.scene.add(baseDoor);
@@ -1942,8 +2333,26 @@ class GameEngine {
       }
     });
 
+    const baseTransporter = ModelFactory.createTransporterPad('GAMMA BASE TRANSPORTER');
+    baseTransporter.position.set(10 * 2, 0, 46 * 2);
+    this.scene.add(baseTransporter);
+    this.interactiveObjects.push({
+      mesh: baseTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE GAMMA BASE TRANSPORTER [10, 47]',
+      onInteract: () => {
+        if (this.player.loadout.hasItem('card_gamma')) {
+          this.completeObjective('breach_base');
+          this.transitionPlayerToArea({ x: 69, y: 22 }, 0, 'Gamma clearance verified. Beaming into Vault of Chronos...', true);
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'ACCESS DENIED: Gamma Access Card required in inventory slots 1-5!', 'warn');
+        }
+      }
+    });
+
     // Vault of Chronos Chamber [60..78, 18..44]
-    this.buildBunkerRoom({ minX: 60, maxX: 78, minZ: 18, maxZ: 44, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 60, maxX: 78, minZ: 18, maxZ: 44, wallHeight: 8, doorWall: 'north', doorLabel: 'CHRONOS' });
 
     // Return elevator to Surface at [69, 20]
     const vaultReturn = ModelFactory.createBlastDoor('SURFACE');
@@ -1958,6 +2367,9 @@ class GameEngine {
         this.transitionPlayerToArea({ x: 10, y: 45 }, Math.PI, 'Ascending to Surface Ruins.', false);
       }
     });
+
+    // Extraction Transporter at [25, 0]
+    this.addExtractionTransporter({ x: 25, y: 0 });
 
     // Time Distortion Equipment [69, 36]
     const chronos = ModelFactory.createTimeDistortionDevice();
@@ -2011,7 +2423,23 @@ class GameEngine {
 
   // MISSION 7: Launch Complex [173, 47], Nexus Controls [142, 82] & [142, 84], Viral-X [141, 83]
   buildMission7Sector() {
-    // Launch Complex Entrance [173, 47] on Surface
+    // Launch Complex Entrance [173, 47] on Surface with Barrier Wall
+    const sWallMat = ModelFactory.materials.darkMetal;
+    const sWallL = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), sWallMat);
+    sWallL.position.set(173 * 2 - 7, 4, 47 * 2);
+    this.scene.add(sWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(sWallL) });
+
+    const sWallR = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 2), sWallMat);
+    sWallR.position.set(173 * 2 + 7, 4, 47 * 2);
+    this.scene.add(sWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(sWallR) });
+
+    const sLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), sWallMat);
+    sLintel.position.set(173 * 2, 4.5 + 1.75, 47 * 2);
+    this.scene.add(sLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(sLintel) });
+
     const siloGate = ModelFactory.createBlastDoor('SILO');
     siloGate.position.set(173 * 2, 0, 47 * 2);
     this.scene.add(siloGate);
@@ -2026,8 +2454,22 @@ class GameEngine {
       }
     });
 
+    const siloTransporter = ModelFactory.createTransporterPad('SILO ENTRANCE TRANSPORTER');
+    siloTransporter.position.set(173 * 2, 0, 46 * 2);
+    this.scene.add(siloTransporter);
+    this.interactiveObjects.push({
+      mesh: siloTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE SILO ENTRANCE TRANSPORTER [173, 47]',
+      onInteract: () => {
+        this.completeObjective('enter_launch');
+        this.transitionPlayerToArea({ x: 142, y: 72 }, 0, 'Silo Transporter lock engaged. Beaming into Launch Silo...', true);
+      }
+    });
+
     // Subterranean Launch Silo Chamber [134..150, 68..92]
-    this.buildBunkerRoom({ minX: 134, maxX: 150, minZ: 68, maxZ: 92, wallHeight: 8 });
+    this.buildBunkerRoom({ minX: 134, maxX: 150, minZ: 68, maxZ: 92, wallHeight: 8, doorWall: 'north', doorLabel: 'SILO' });
 
     // Return Blast Door to Surface at [142, 70]
     const siloExit = ModelFactory.createBlastDoor('SURFACE');
@@ -2042,6 +2484,9 @@ class GameEngine {
         this.transitionPlayerToArea({ x: 173, y: 45 }, Math.PI, 'Exiting to Surface Perimeter.', false);
       }
     });
+
+    // Extraction Transporter at [141, 83]
+    this.addExtractionTransporter({ x: 141, y: 83 });
 
     // Nexus Control 1 [142, 82]
     const nexus1 = ModelFactory.createCommGrid();
@@ -2142,10 +2587,29 @@ class GameEngine {
       });
     });
 
-    // Alpha Door at [94, 85]
+    // Alpha Door at [94, 85] with Reinforced Barrier Wall
+    const aWallMat = ModelFactory.materials.darkMetal;
+    const aWallL = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 2), aWallMat);
+    aWallL.position.set(94 * 2 - 8, 4, 85 * 2);
+    this.scene.add(aWallL);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(aWallL) });
+
+    const aWallR = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 2), aWallMat);
+    aWallR.position.set(94 * 2 + 8, 4, 85 * 2);
+    this.scene.add(aWallR);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(aWallR) });
+
+    const aLintel = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, 2), aWallMat);
+    aLintel.position.set(94 * 2, 4.5 + 1.75, 85 * 2);
+    this.scene.add(aLintel);
+    this.colliders.push({ box: new THREE.Box3().setFromObject(aLintel) });
+
     const alphaDoor = ModelFactory.createBlastDoor('ALPHA');
     alphaDoor.position.set(94 * 2, 0, 85 * 2);
     this.scene.add(alphaDoor);
+    const alphaCollider = { box: new THREE.Box3().setFromObject(alphaDoor), mesh: alphaDoor, isDoor: true };
+    this.colliders.push(alphaCollider);
+
     this.interactiveObjects.push({
       mesh: alphaDoor,
       type: 'door',
@@ -2154,8 +2618,27 @@ class GameEngine {
       onInteract: () => {
         if (this.player.loadout.hasItem('card_alpha')) {
           this.completeObjective('unlock_alpha_door');
+          alphaCollider.disabled = true;
           this.scene.remove(alphaDoor);
           this.hud.addCommMessage('SUIT AI', 'Alpha Barrier unlocked. Access to Core elevator cleared.', 'success');
+        } else {
+          this.hud.addCommMessage('SUIT AI', 'ACCESS DENIED: Alpha Sector Card required!', 'warn');
+        }
+      }
+    });
+
+    const alphaTransporter = ModelFactory.createTransporterPad('ALPHA TRANSPORTER');
+    alphaTransporter.position.set(94 * 2, 0, 84 * 2);
+    this.scene.add(alphaTransporter);
+    this.interactiveObjects.push({
+      mesh: alphaTransporter,
+      type: 'transporter',
+      interactDist: 7.0,
+      prompt: '[E] USE ALPHA TRANSPORTER [94, 85]',
+      onInteract: () => {
+        if (this.player.loadout.hasItem('card_alpha')) {
+          this.completeObjective('unlock_alpha_door');
+          this.transitionPlayerToArea({ x: 94, y: 90 }, 0, 'Alpha Transporter override confirmed. Beaming past barrier.', false);
         } else {
           this.hud.addCommMessage('SUIT AI', 'ACCESS DENIED: Alpha Sector Card required!', 'warn');
         }
@@ -2178,7 +2661,10 @@ class GameEngine {
     });
 
     // Reactor Core Subterranean Chamber [110..130, 158..192]
-    this.buildBunkerRoom({ minX: 110, maxX: 130, minZ: 158, maxZ: 192, wallHeight: 9 });
+    this.buildBunkerRoom({ minX: 110, maxX: 130, minZ: 158, maxZ: 192, wallHeight: 9, doorWall: 'north', doorLabel: 'CORE' });
+
+    // Shuttle Bay Extraction Transporter at [26, 237]
+    this.addExtractionTransporter({ x: 26, y: 237 });
 
     // Return elevator to citadel at [120, 160]
     const coreReturn = ModelFactory.createBlastDoor('CITADEL');
@@ -2245,6 +2731,8 @@ class GameEngine {
       const z = (10 + Math.sin(angle) * 8) * 2;
       this.spawnEnemy('g500', x, z);
     }
+    // Simulated Extraction Transporter at [30, 30]
+    this.addExtractionTransporter({ x: 30, y: 30 });
   }
 
   // =========================================================================
@@ -2932,6 +3420,19 @@ class GameEngine {
       this.updateParticles(dt);
       this.updateMission(dt);
       this.updateHUD(dt);
+
+      // Animate active Sector Transporter energy beams
+      const time = this.clock.getElapsedTime();
+      for (let i = 0; i < this.interactiveObjects.length; i++) {
+        const io = this.interactiveObjects[i];
+        if (io && io.mesh && io.mesh.userData && io.mesh.userData.isTransporter && io.mesh.userData.beam) {
+          const b = io.mesh.userData.beam;
+          b.rotation.y += dt * 1.2;
+          if (b.material) {
+            b.material.opacity = 0.28 + 0.16 * Math.sin(time * 3.5);
+          }
+        }
+      }
     } else if (this.titleShowcase) {
       // Smoothly rotate 3D showcase on title screen & menus
       this.titleShowcase.rotation.y += dt * 0.35;
@@ -2953,6 +3454,39 @@ class GameEngine {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+  }
+
+  checkPlayerCollision(targetPos) {
+    if (!this.colliders || this.colliders.length === 0) return false;
+
+    const r = 0.85; // Player bounding radius
+    const minX = targetPos.x - r;
+    const maxX = targetPos.x + r;
+    const minZ = targetPos.z - r;
+    const maxZ = targetPos.z + r;
+
+    // Perimeter boundary limits
+    if (targetPos.x < 3.0 || targetPos.x > 497.0 || targetPos.z < 3.0 || targetPos.z > 517.0) {
+      return true;
+    }
+
+    for (let i = 0; i < this.colliders.length; i++) {
+      const c = this.colliders[i];
+      if (!c || c.disabled || c.isOpen) continue;
+
+      const box = c.box || (c.mesh ? new THREE.Box3().setFromObject(c.mesh) : null);
+      if (!box) continue;
+
+      // Check horizontal AABB intersection
+      if (maxX > box.min.x && minX < box.max.x &&
+          maxZ > box.min.z && minZ < box.max.z) {
+        // Vertical check: ignore elements completely below feet or above head
+        if (box.max.y > 0.35 && box.min.y < 1.8) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   updatePlayer(dt) {
@@ -2999,10 +3533,35 @@ class GameEngine {
       this.yawObject.rotation.y -= cfg.settings.smoothTurnSpeed * dt;
     }
 
-    // Apply translation
+    // Apply translation with solid collision detection and smooth sliding
     if (moveVector.lengthSq() > 0) {
       moveVector.normalize();
-      this.player.position.addScaledVector(moveVector, this.player.speed * dt);
+      const moveDist = this.player.speed * dt;
+      const deltaX = moveVector.x * moveDist;
+      const deltaZ = moveVector.z * moveDist;
+
+      const nextPos = this.player.position.clone();
+      nextPos.x += deltaX;
+      nextPos.z += deltaZ;
+
+      if (!this.checkPlayerCollision(nextPos)) {
+        this.player.position.copy(nextPos);
+      } else {
+        // Sliding along X: test X-axis alone
+        const nextX = this.player.position.clone();
+        nextX.x += deltaX;
+        if (Math.abs(deltaX) > 0.0001 && !this.checkPlayerCollision(nextX)) {
+          this.player.position.x = nextX.x;
+        }
+
+        // Sliding along Z: test Z-axis alone
+        const nextZ = this.player.position.clone();
+        nextZ.z += deltaZ;
+        if (Math.abs(deltaZ) > 0.0001 && !this.checkPlayerCollision(nextZ)) {
+          this.player.position.z = nextZ.z;
+        }
+      }
+
       this.yawObject.position.copy(this.player.position);
       this.yawObject.position.y = this.player.height;
 

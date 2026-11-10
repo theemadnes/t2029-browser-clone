@@ -910,6 +910,45 @@ const ModelFactory = {
     return pad;
   },
 
+  // 3D Sector Transporter / Teleportation Platform
+  createTransporterPad(label = 'SECTOR TRANSPORTER') {
+    this.initMaterials();
+    const pad = new THREE.Group();
+
+    // Base Octagonal Platform with Hazard Edges
+    VoxelBuilder.addBox(pad, 4.2, 0.35, 4.2, this.materials.concrete, 0, 0.175, 0);
+    VoxelBuilder.addBox(pad, 3.8, 0.15, 3.8, this.materials.hazard, 0, 0.35, 0);
+    VoxelBuilder.addBox(pad, 3.0, 0.10, 3.0, this.materials.bunkerFloor, 0, 0.45, 0);
+
+    // Glowing Central Teleport Energy Node
+    VoxelBuilder.addBox(pad, 2.2, 0.05, 2.2, this.materials.cyanGlow, 0, 0.51, 0);
+    VoxelBuilder.addBox(pad, 0.8, 0.08, 0.8, this.materials.amberGlow, 0, 0.53, 0);
+
+    // 4 Corner Energy Pylons
+    const cornerPylons = [ [-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6] ];
+    cornerPylons.forEach(([px, pz]) => {
+      VoxelBuilder.addBox(pad, 0.35, 2.2, 0.35, this.materials.darkMetal, px, 1.1, pz);
+      VoxelBuilder.addBox(pad, 0.45, 0.2, 0.45, this.materials.chrome, px, 2.2, pz);
+      VoxelBuilder.addBox(pad, 0.25, 0.25, 0.25, this.materials.cyanGlow, px, 2.4, pz);
+    });
+
+    // Holographic Teleport Beam Column
+    const beamGeo = new THREE.CylinderGeometry(1.2, 1.2, 3.2, 16, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.y = 1.9;
+    pad.add(beam);
+
+    pad.userData = { isTransporter: true, label: label, beam: beam };
+    return pad;
+  },
+
   // 3D Panoramic Bitmap Skyline Backdrop of Ruined Los Angeles
   createSkylineBackdrop(radius = 280, height = 150) {
     this.initMaterials();
